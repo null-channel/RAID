@@ -205,6 +205,21 @@ mod tests {
         assert!(test_context.contains("AMD Ryzen 9 7940HS"));
         assert!(test_context.contains("16GB/32GB"));
     }
+
+    #[test]
+    fn test_question_analysis() {
+        // Test that question analysis correctly identifies different types of questions
+        let container_question = "I would like to know if my docker container called nginx is running";
+        assert!(container_question.to_lowercase().contains("container"));
+        assert!(container_question.to_lowercase().contains("docker"));
+        assert!(container_question.to_lowercase().contains("nginx"));
+
+        let performance_question = "why is my system slow?";
+        assert!(performance_question.to_lowercase().contains("slow"));
+
+        let service_question = "is my web service running?";
+        assert!(service_question.to_lowercase().contains("service"));
+    }
 }
 
 fn print_output(system_info: &SystemInfo, analysis: &str, output_format: &OutputFormat, verbose: bool) {
@@ -883,12 +898,115 @@ async fn run_question_answering(cli: &Cli, question: &str) -> Result<(), Box<dyn
 
     println!("❓ Question: {}", question);
     println!("🤖 AI Assistant ({})", ai_provider.name());
-    println!("Gathering system information and analyzing your question...\n");
+    println!("Investigating your question...\n");
 
-    // Collect relevant system info
+    // Collect basic system info
     let sys_info = collect_system_info();
     
-    // Build system context
+    // Analyze question and run relevant tools
+    let debug_tools = DebugTools::new();
+    let mut tool_results = Vec::new();
+    let mut tools_used = Vec::new();
+    
+    // Determine which tools to run based on the question
+    let question_lower = question.to_lowercase();
+    
+    // Container/Docker related questions
+    if question_lower.contains("container") || question_lower.contains("docker") || question_lower.contains("nginx") {
+        println!("🔍 Checking Docker containers...");
+        
+        // Run docker ps to see all containers
+        let docker_result = debug_tools.run_docker_ps().await;
+        tools_used.push("docker ps -a".to_string());
+        
+        if docker_result.success {
+            println!("✅ Docker containers found:");
+            println!("```");
+            println!("{}", docker_result.output);
+            println!("```\n");
+        } else {
+            println!("❌ Docker check failed: {}", docker_result.error.clone().unwrap_or("Unknown error".to_string()));
+        }
+        tool_results.push(docker_result);
+        
+        // If asking about a specific container, try to inspect it
+        if question_lower.contains("nginx") {
+            println!("🔍 Checking nginx container specifically...");
+            let nginx_inspect = debug_tools.run_docker_inspect("nginx").await;
+            tools_used.push("docker inspect nginx".to_string());
+            
+            if nginx_inspect.success {
+                println!("✅ Nginx container details:");
+                println!("```");
+                println!("{}", nginx_inspect.output);
+                println!("```\n");
+            } else {
+                println!("❌ Nginx container not found or error occurred");
+            }
+            tool_results.push(nginx_inspect);
+        }
+    }
+    
+    // Performance related questions
+    if question_lower.contains("slow") || question_lower.contains("performance") || question_lower.contains("cpu") || question_lower.contains("memory") {
+        println!("🔍 Checking system performance...");
+        
+        let top_result = debug_tools.run_top().await;
+        tools_used.push("top -b -n 1".to_string());
+        
+        if top_result.success {
+            println!("✅ Current system processes:");
+            println!("```");
+            println!("{}", top_result.output.lines().take(20).collect::<Vec<_>>().join("\n"));
+            println!("```\n");
+        }
+        tool_results.push(top_result);
+        
+        let free_result = debug_tools.run_free().await;
+        tools_used.push("free -h".to_string());
+        
+        if free_result.success {
+            println!("✅ Memory usage:");
+            println!("```");
+            println!("{}", free_result.output);
+            println!("```\n");
+        }
+        tool_results.push(free_result);
+    }
+    
+    // Service related questions
+    if question_lower.contains("service") && !question_lower.contains("container") {
+        println!("🔍 Checking system services...");
+        
+        // Check for failed services
+        if !sys_info.systemd.failed_units.is_empty() {
+            println!("❌ Found failed services:");
+            for unit in &sys_info.systemd.failed_units {
+                println!("  - {}", unit);
+            }
+            println!();
+        } else {
+            println!("✅ All system services are running normally\n");
+        }
+    }
+    
+    // Logs related questions
+    if question_lower.contains("log") || question_lower.contains("error") {
+        println!("🔍 Checking recent logs...");
+        
+        let journal_result = debug_tools.run_journalctl_recent(Some(10)).await;
+        tools_used.push("journalctl -n 10".to_string());
+        
+        if journal_result.success {
+            println!("✅ Recent system logs:");
+            println!("```");
+            println!("{}", journal_result.output);
+            println!("```\n");
+        }
+        tool_results.push(journal_result);
+    }
+    
+    // Build comprehensive context for AI
     let mut context = String::new();
     context.push_str(&format!("Operating System: {}\n", sys_info.os));
     context.push_str(&format!("CPU: {}\n", sys_info.cpu));
@@ -913,22 +1031,35 @@ async fn run_question_answering(cli: &Cli, question: &str) -> Result<(), Box<dyn
         context.push_str(&format!("Failed Services: {}\n", sys_info.systemd.failed_units.join(", ")));
     }
     
-    // Include recent errors if any
-    if !sys_info.journal.recent_errors.is_empty() {
-        context.push_str(&format!("Recent Errors ({} total):\n", sys_info.journal.recent_errors.len()));
-        for (i, error) in sys_info.journal.recent_errors.iter().take(3).enumerate() {
-            context.push_str(&format!("  {}. {}: {}\n", i + 1, error.unit, error.message));
-        }
-        if sys_info.journal.recent_errors.len() > 3 {
-            context.push_str(&format!("  ... and {} more\n", sys_info.journal.recent_errors.len() - 3));
+    // Add tool results to context
+    if !tool_results.is_empty() {
+        context.push_str("\nTOOL RESULTS:\n");
+        for result in &tool_results {
+            context.push_str(&format!("Command: {}\n", result.command));
+            context.push_str(&format!("Success: {}\n", result.success));
+            if result.success {
+                context.push_str(&format!("Output: {}\n", result.output));
+            } else if let Some(error) = &result.error {
+                context.push_str(&format!("Error: {}\n", error));
+            }
+            context.push_str("\n");
         }
     }
 
-    // Get AI answer
+    // Get AI analysis
+    println!("🤖 AI Analysis:");
     let answer = ai_provider.answer_question(question, &context).await?;
-    
-    println!("💡 Answer:");
     println!("{}", answer);
+    
+    // Provide guidance on how to run these commands yourself
+    if !tools_used.is_empty() {
+        println!("\n📚 How to run these checks yourself:");
+        for tool in &tools_used {
+            println!("  $ {}", tool);
+        }
+        println!();
+        println!("💡 Tip: You can run any of these commands directly in your terminal to get the same information!");
+    }
     
     Ok(())
 }
