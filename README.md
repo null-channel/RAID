@@ -2,6 +2,14 @@
 
 RAID (Rust Analysis and Informative Debugger) is a comprehensive system health checker that leverages AI to analyze your system for potential issues, security concerns, and performance problems.
 
+## ⚠️ Project Status Warning
+
+**This project is currently "vibe coded"** - meaning it was built quickly with a focus on getting things working rather than production-quality polish. While it functions and can be useful, please understand that there may be more bugs than you'd typically expect from a finished project.
+
+If people find this tool useful and there's community interest, we may invest more effort into making it more robust and production-ready in the future. For now, please use it with the understanding that it's more of a proof-of-concept/experimental tool.
+
+We know this is hard to believe, but yes, there really might be more bugs than usual! 😅
+
 ## Important Rules
 
 ### NEVER source ~/.chatgpt file
