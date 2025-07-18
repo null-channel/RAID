@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::process::Command;
 use std::collections::HashMap;
+use std::process::Command;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SystemInfo {
@@ -73,6 +73,54 @@ pub struct ContainerInfo {
     pub ports: Vec<String>,
 }
 
+pub fn collect_basic_system_info() -> BasicSystemInfo {
+    let (total_memory, free_memory) = get_memory_info();
+    let (total_disk, free_disk) = get_disk_info();
+
+    BasicSystemInfo {
+        os: get_os_info(),
+        cpu: get_cpu_info(),
+        total_memory,
+        free_memory,
+        total_disk,
+        free_disk,
+        is_kubernetes: is_running_in_kubernetes(),
+        container_runtime_available: is_container_runtime_available(),
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BasicSystemInfo {
+    pub os: String,
+    pub cpu: String,
+    pub total_memory: String,
+    pub free_memory: String,
+    pub total_disk: String,
+    pub free_disk: String,
+    pub is_kubernetes: bool,
+    pub container_runtime_available: bool,
+}
+
+// Lightweight check for Kubernetes environment (no external commands)
+fn is_running_in_kubernetes() -> bool {
+    // Check for Kubernetes environment variables
+    std::env::var("KUBERNETES_SERVICE_HOST").is_ok() ||
+    std::env::var("KUBERNETES_SERVICE_PORT").is_ok() ||
+    // Check for mounted service account token
+    std::path::Path::new("/var/run/secrets/kubernetes.io/serviceaccount/token").exists()
+}
+
+// Lightweight check for container runtime availability (no external commands)
+fn is_container_runtime_available() -> bool {
+    // Check if docker socket exists
+    std::path::Path::new("/var/run/docker.sock").exists() ||
+    // Check if containerd socket exists  
+    std::path::Path::new("/run/containerd/containerd.sock").exists() ||
+    // Check if docker binary exists in common paths
+    std::path::Path::new("/usr/bin/docker").exists() ||
+    std::path::Path::new("/usr/local/bin/docker").exists()
+}
+
 pub fn collect_system_info() -> SystemInfo {
     let (total_memory, free_memory) = get_memory_info();
     let (total_disk, free_disk) = get_disk_info();
@@ -95,7 +143,7 @@ fn get_os_info() -> String {
     // Try to read from /etc/os-release first
     if let Ok(content) = std::fs::read_to_string("/etc/os-release") {
         let mut os_info = HashMap::new();
-        
+
         for line in content.lines() {
             if let Some((key, value)) = line.split_once('=') {
                 // Remove quotes from value
@@ -103,43 +151,43 @@ fn get_os_info() -> String {
                 os_info.insert(key.to_string(), clean_value.to_string());
             }
         }
-        
+
         // Build a comprehensive OS string
         let mut os_string = String::new();
-        
+
         // Use PRETTY_NAME if available, otherwise use NAME
         if let Some(pretty_name) = os_info.get("PRETTY_NAME") {
             os_string.push_str(pretty_name);
         } else if let Some(name) = os_info.get("NAME") {
             os_string.push_str(name);
         }
-        
+
         // Add version information if available
         if let Some(version) = os_info.get("VERSION") {
             if !version.is_empty() {
                 os_string.push_str(&format!(" {}", version));
             }
         }
-        
+
         // Add build ID if available (useful for rolling releases)
         if let Some(build_id) = os_info.get("BUILD_ID") {
             if !build_id.is_empty() && build_id != "rolling" {
                 os_string.push_str(&format!(" (Build: {})", build_id));
             }
         }
-        
+
         // Add kernel version
         if let Ok(kernel_version) = std::fs::read_to_string("/proc/version") {
             if let Some(kernel_info) = kernel_version.split_whitespace().nth(2) {
                 os_string.push_str(&format!(" [Kernel: {}]", kernel_info));
             }
         }
-        
+
         if !os_string.is_empty() {
             return os_string;
         }
     }
-    
+
     // Fallback to basic OS detection
     std::env::consts::OS.to_string()
 }
@@ -198,9 +246,11 @@ fn collect_kubernetes_info() -> KubernetesInfo {
     // Check if we're running in Kubernetes by looking for service account token
     if std::path::Path::new("/var/run/secrets/kubernetes.io/serviceaccount/token").exists() {
         k8s_info.is_kubernetes = true;
-        
+
         // Try to get namespace
-        if let Ok(namespace) = std::fs::read_to_string("/var/run/secrets/kubernetes.io/serviceaccount/namespace") {
+        if let Ok(namespace) =
+            std::fs::read_to_string("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+        {
             k8s_info.namespace = Some(namespace.trim().to_string());
         }
 
@@ -237,7 +287,11 @@ fn collect_cgroup_info() -> CgroupInfo {
         for line in content.lines() {
             let parts: Vec<&str> = line.split(':').collect();
             if parts.len() >= 3 {
-                cgroup_info.version = if parts[0] == "0" { "v1".to_string() } else { "v2".to_string() };
+                cgroup_info.version = if parts[0] == "0" {
+                    "v1".to_string()
+                } else {
+                    "v2".to_string()
+                };
                 cgroup_info.controllers = parts[1].split(',').map(|s| s.to_string()).collect();
                 cgroup_info.cgroup_path = parts[2].to_string();
                 break;
@@ -275,7 +329,10 @@ fn collect_systemd_info() -> SystemdInfo {
     }
 
     // Get failed units
-    if let Ok(output) = Command::new("systemctl").args(["--failed", "--no-pager", "--no-legend"]).output() {
+    if let Ok(output) = Command::new("systemctl")
+        .args(["--failed", "--no-pager", "--no-legend"])
+        .output()
+    {
         for line in String::from_utf8_lossy(&output.stdout).lines() {
             if !line.trim().is_empty() {
                 let parts: Vec<&str> = line.split_whitespace().collect();
@@ -289,11 +346,14 @@ fn collect_systemd_info() -> SystemdInfo {
     // Get some important units
     let important_units = ["docker", "containerd", "kubelet", "kube-proxy"];
     for unit in important_units {
-        if let Ok(output) = Command::new("systemctl").args(["show", unit, "--property=ActiveState,Description"]).output() {
+        if let Ok(output) = Command::new("systemctl")
+            .args(["show", unit, "--property=ActiveState,Description"])
+            .output()
+        {
             let output_str = String::from_utf8_lossy(&output.stdout);
             let mut status = "unknown".to_string();
             let mut description = "".to_string();
-            
+
             for line in output_str.lines() {
                 if line.starts_with("ActiveState=") {
                     status = line.split('=').nth(1).unwrap_or("unknown").to_string();
@@ -301,7 +361,7 @@ fn collect_systemd_info() -> SystemdInfo {
                     description = line.split('=').nth(1).unwrap_or("").to_string();
                 }
             }
-            
+
             systemd_info.units.push(SystemdUnit {
                 name: unit.to_string(),
                 status,
@@ -323,7 +383,7 @@ fn collect_journal_info() -> JournalInfo {
     // Get recent errors (last 50 entries)
     if let Ok(output) = Command::new("journalctl")
         .args(["-p", "err", "--no-pager", "--no-hostname", "-n", "50"])
-        .output() 
+        .output()
     {
         journal_info.recent_errors = parse_journal_output(&output.stdout);
     }
@@ -331,7 +391,7 @@ fn collect_journal_info() -> JournalInfo {
     // Get recent warnings (last 50 entries)
     if let Ok(output) = Command::new("journalctl")
         .args(["-p", "warning", "--no-pager", "--no-hostname", "-n", "50"])
-        .output() 
+        .output()
     {
         journal_info.recent_warnings = parse_journal_output(&output.stdout);
     }
@@ -339,7 +399,7 @@ fn collect_journal_info() -> JournalInfo {
     // Get boot errors
     if let Ok(output) = Command::new("journalctl")
         .args(["-p", "err", "--no-pager", "--no-hostname", "-b"])
-        .output() 
+        .output()
     {
         journal_info.boot_errors = parse_journal_output(&output.stdout);
     }
@@ -357,12 +417,15 @@ fn parse_journal_output(output: &[u8]) -> Vec<JournalEntry> {
         if trimmed.is_empty() {
             continue;
         }
-        
+
         // Skip boot/reboot markers - they're not actual log entries
-        if trimmed.starts_with("-- Boot") || trimmed.starts_with("-- Reboot") || trimmed.starts_with("--") {
+        if trimmed.starts_with("-- Boot")
+            || trimmed.starts_with("-- Reboot")
+            || trimmed.starts_with("--")
+        {
             continue;
         }
-        
+
         // Try to parse a new log entry
         let mut parts = trimmed.splitn(4, ' ');
         let month = parts.next().unwrap_or("");
@@ -370,8 +433,13 @@ fn parse_journal_output(output: &[u8]) -> Vec<JournalEntry> {
         let time = parts.next().unwrap_or("");
         let rest = parts.next().unwrap_or("");
         let timestamp = format!("{} {} {}", month, day, time);
-        
-        if !month.is_empty() && !day.is_empty() && !time.is_empty() && !rest.is_empty() && rest.contains(':') {
+
+        if !month.is_empty()
+            && !day.is_empty()
+            && !time.is_empty()
+            && !rest.is_empty()
+            && rest.contains(':')
+        {
             // If we have a current entry, push it before starting a new one
             if let Some(entry) = current_entry.take() {
                 // Only add entries that have actual message content
@@ -379,11 +447,11 @@ fn parse_journal_output(output: &[u8]) -> Vec<JournalEntry> {
                     entries.push(entry);
                 }
             }
-            
+
             let colon_pos = rest.find(':').unwrap();
             let unit = rest[..colon_pos].trim();
             let message = rest[colon_pos + 1..].trim().to_string();
-            
+
             // Only create entry if there's actual message content
             if !message.is_empty() {
                 current_entry = Some(JournalEntry {
@@ -403,14 +471,14 @@ fn parse_journal_output(output: &[u8]) -> Vec<JournalEntry> {
             }
         }
     }
-    
+
     // Push the last entry if any and it has content
     if let Some(entry) = current_entry {
         if !entry.message.trim().is_empty() {
             entries.push(entry);
         }
     }
-    
+
     entries
 }
 
@@ -418,9 +486,17 @@ fn collect_container_info() -> Vec<ContainerInfo> {
     let mut containers = Vec::new();
 
     // Try to get Docker containers
-    if let Ok(output) = Command::new("docker").args(["ps", "--format", "table {{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"]).output() {
+    if let Ok(output) = Command::new("docker")
+        .args([
+            "ps",
+            "--format",
+            "table {{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}",
+        ])
+        .output()
+    {
         let output_str = String::from_utf8_lossy(&output.stdout);
-        for line in output_str.lines().skip(1) { // Skip header
+        for line in output_str.lines().skip(1) {
+            // Skip header
             let parts: Vec<&str> = line.split('\t').collect();
             if parts.len() >= 5 {
                 containers.push(ContainerInfo {
@@ -435,9 +511,13 @@ fn collect_container_info() -> Vec<ContainerInfo> {
     }
 
     // Try to get containerd containers
-    if let Ok(output) = Command::new("crictl").args(["ps", "--output", "table"]).output() {
+    if let Ok(output) = Command::new("crictl")
+        .args(["ps", "--output", "table"])
+        .output()
+    {
         let output_str = String::from_utf8_lossy(&output.stdout);
-        for line in output_str.lines().skip(1) { // Skip header
+        for line in output_str.lines().skip(1) {
+            // Skip header
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 4 {
                 containers.push(ContainerInfo {
@@ -452,7 +532,7 @@ fn collect_container_info() -> Vec<ContainerInfo> {
     }
 
     containers
-} 
+}
 
 #[cfg(test)]
 mod tests {
@@ -476,34 +556,47 @@ Jan 01 12:04:00 kernel:Another message with no space after colon
 
 "#;
         let entries = parse_journal_output(input.as_bytes());
-        
+
         // Boot markers should be filtered out, but entries with content are included
         assert_eq!(entries.len(), 6); // All entries with actual content
-        
+
         // First normal entry
         assert_eq!(entries[0].unit, "systemd");
         assert_eq!(entries[0].message, "Started Session 1 of user root.");
-        
+
         // Kernel entry with content
         assert_eq!(entries[1].unit, "kernel");
         assert_eq!(entries[1].message, "Initializing cgroup subsys cpuset");
-        
+
         // Wrapped/continued message
         assert_eq!(entries[2].unit, "kernel");
-        assert_eq!(entries[2].message, "This is a long message that continues on the next line and even more");
-        
+        assert_eq!(
+            entries[2].message,
+            "This is a long message that continues on the next line and even more"
+        );
+
         // SSHD entry
         assert_eq!(entries[3].unit, "sshd");
-        assert_eq!(entries[3].message, "Accepted password for user from 1.2.3.4 port 22 ssh2");
-        
+        assert_eq!(
+            entries[3].message,
+            "Accepted password for user from 1.2.3.4 port 22 ssh2"
+        );
+
         // systemd stopping entry with malformed line appended
         assert_eq!(entries[4].unit, "systemd");
-        assert!(entries[4].message.contains("Stopping User Manager for UID 1000... Malformed line without enough parts"));
-        
+        assert!(
+            entries[4].message.contains(
+                "Stopping User Manager for UID 1000... Malformed line without enough parts"
+            )
+        );
+
         // kernel entry with no space after colon
         assert_eq!(entries[5].unit, "kernel");
-        assert_eq!(entries[5].message, "Another message with no space after colon");
-        
+        assert_eq!(
+            entries[5].message,
+            "Another message with no space after colon"
+        );
+
         // Note: Empty kernel message and reboot marker are filtered out
     }
-} 
+}

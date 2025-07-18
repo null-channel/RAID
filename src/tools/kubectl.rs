@@ -6,7 +6,7 @@ impl DebugTools {
         let start_time = std::time::Instant::now();
         let mut command = Command::new("kubectl");
         command.arg("get").arg("pods").arg("--output=wide");
-        
+
         if let Some(ns) = namespace {
             command.args(["-n", ns]);
         }
@@ -26,8 +26,10 @@ impl DebugTools {
 
                 DebugToolResult {
                     tool_name: "kubectl_get_pods".to_string(),
-                    command: format!("kubectl get pods --output=wide {}", 
-                        namespace.map(|ns| format!("-n {}", ns)).unwrap_or_default()),
+                    command: format!(
+                        "kubectl get pods --output=wide {}",
+                        namespace.map(|ns| format!("-n {}", ns)).unwrap_or_default()
+                    ),
                     success,
                     output: output_str,
                     error: error_str,
@@ -41,15 +43,19 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
-    pub async fn run_kubectl_describe_pod(&self, pod_name: &str, namespace: Option<&str>) -> DebugToolResult {
+    pub async fn run_kubectl_describe_pod(
+        &self,
+        pod_name: &str,
+        namespace: Option<&str>,
+    ) -> DebugToolResult {
         let start_time = std::time::Instant::now();
         let mut command = Command::new("kubectl");
         command.arg("describe").arg("pod").arg(pod_name);
-        
+
         if let Some(ns) = namespace {
             command.args(["-n", ns]);
         }
@@ -69,9 +75,11 @@ impl DebugTools {
 
                 DebugToolResult {
                     tool_name: "kubectl_describe_pod".to_string(),
-                    command: format!("kubectl describe pod {} {}", 
+                    command: format!(
+                        "kubectl describe pod {} {}",
                         pod_name,
-                        namespace.map(|ns| format!("-n {}", ns)).unwrap_or_default()),
+                        namespace.map(|ns| format!("-n {}", ns)).unwrap_or_default()
+                    ),
                     success,
                     output: output_str,
                     error: error_str,
@@ -85,7 +93,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
@@ -93,7 +101,7 @@ impl DebugTools {
         let start_time = std::time::Instant::now();
         let mut command = Command::new("kubectl");
         command.arg("get").arg("services").arg("--output=wide");
-        
+
         if let Some(ns) = namespace {
             command.args(["-n", ns]);
         }
@@ -113,8 +121,10 @@ impl DebugTools {
 
                 DebugToolResult {
                     tool_name: "kubectl_get_services".to_string(),
-                    command: format!("kubectl get services --output=wide {}", 
-                        namespace.map(|ns| format!("-n {}", ns)).unwrap_or_default()),
+                    command: format!(
+                        "kubectl get services --output=wide {}",
+                        namespace.map(|ns| format!("-n {}", ns)).unwrap_or_default()
+                    ),
                     success,
                     output: output_str,
                     error: error_str,
@@ -128,7 +138,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
@@ -166,7 +176,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
@@ -174,7 +184,7 @@ impl DebugTools {
         let start_time = std::time::Instant::now();
         let mut command = Command::new("kubectl");
         command.arg("get").arg("events");
-        
+
         if let Some(ns) = namespace {
             command.args(["-n", ns]);
         }
@@ -194,8 +204,10 @@ impl DebugTools {
 
                 DebugToolResult {
                     tool_name: "kubectl_get_events".to_string(),
-                    command: format!("kubectl get events {}", 
-                        namespace.map(|ns| format!("-n {}", ns)).unwrap_or_default()),
+                    command: format!(
+                        "kubectl get events {}",
+                        namespace.map(|ns| format!("-n {}", ns)).unwrap_or_default()
+                    ),
                     success,
                     output: output_str,
                     error: error_str,
@@ -209,7 +221,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
-} 
+}

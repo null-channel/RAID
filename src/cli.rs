@@ -14,7 +14,13 @@ pub struct Cli {
     pub problem_description: Option<String>,
 
     /// AI provider to use
-    #[arg(long, short = 'p', value_enum, env = "AI_PROVIDER", default_value = "open-ai")]
+    #[arg(
+        long,
+        short = 'p',
+        value_enum,
+        env = "AI_PROVIDER",
+        default_value = "open-ai"
+    )]
     pub ai_provider: AIProvider,
 
     /// API key for the AI provider
@@ -203,13 +209,9 @@ pub enum AIAgentAction {
         lines: Option<usize>,
     },
     /// Provide final analysis/answer
-    ProvideAnalysis {
-        analysis: String,
-    },
+    ProvideAnalysis { analysis: String },
     /// Ask user for more information
-    AskUser {
-        question: String,
-    },
+    AskUser { question: String },
 }
 
 impl CheckComponent {
@@ -239,7 +241,9 @@ impl Cli {
 
     /// Get the model to use (either specified or default)
     pub fn get_model(&self) -> String {
-        self.ai_model.clone().unwrap_or_else(|| self.get_default_model())
+        self.ai_model
+            .clone()
+            .unwrap_or_else(|| self.get_default_model())
     }
 
     /// Check if this is a full system check (stores in database)
@@ -248,7 +252,7 @@ impl Cli {
             Some(Commands::Check { component }) => matches!(component, CheckComponent::All),
             Some(Commands::Debug { .. }) => false, // Debug commands don't store in database
             Some(Commands::Issues { .. }) => false, // Issues commands don't store in database
-            None => true, // Default to full check when no subcommand
+            None => true,                          // Default to full check when no subcommand
         }
     }
 
@@ -258,7 +262,7 @@ impl Cli {
             Some(Commands::Check { component }) => component.clone(),
             Some(Commands::Debug { .. }) => CheckComponent::Debug,
             Some(Commands::Issues { .. }) => CheckComponent::All, // Issues commands default to all
-            None => CheckComponent::All, // Default to all if no subcommand
+            None => CheckComponent::All,                          // Default to all if no subcommand
         }
     }
-} 
+}

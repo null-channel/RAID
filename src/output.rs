@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::sysinfo::SystemInfo;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SystemHealthReport {
@@ -72,18 +72,27 @@ pub fn create_system_health_report(
     verbose: bool,
 ) -> SystemHealthReport {
     let timestamp = chrono::Utc::now().to_rfc3339();
-    
+
     // Analyze system status
     let has_failed_services = !system_info.systemd.failed_units.is_empty();
-    let has_significant_errors = system_info.journal.recent_errors.iter()
-        .any(|entry| !is_common_non_critical_error(&entry.message)) ||
-        system_info.journal.boot_errors.iter()
-        .any(|entry| !is_common_non_critical_error(&entry.message));
-    let has_container_issues = system_info.containers.iter()
+    let has_significant_errors = system_info
+        .journal
+        .recent_errors
+        .iter()
+        .any(|entry| !is_common_non_critical_error(&entry.message))
+        || system_info
+            .journal
+            .boot_errors
+            .iter()
+            .any(|entry| !is_common_non_critical_error(&entry.message));
+    let has_container_issues = system_info
+        .containers
+        .iter()
         .any(|container| !container.status.contains("Up"));
 
     // Determine overall status
-    let overall_status = if !has_failed_services && !has_significant_errors && !has_container_issues {
+    let overall_status = if !has_failed_services && !has_significant_errors && !has_container_issues
+    {
         "healthy".to_string()
     } else if has_failed_services {
         "critical".to_string()
@@ -93,7 +102,11 @@ pub fn create_system_health_report(
 
     // Create service status
     let service_status = ServiceStatus {
-        status: if has_failed_services { "critical".to_string() } else { "healthy".to_string() },
+        status: if has_failed_services {
+            "critical".to_string()
+        } else {
+            "healthy".to_string()
+        },
         failed_units: system_info.systemd.failed_units.clone(),
         total_units: system_info.systemd.units.len(),
         failed_count: system_info.systemd.failed_units.len(),
@@ -102,7 +115,10 @@ pub fn create_system_health_report(
     // Create log status based on verbose mode
     let (recent_errors, boot_errors) = if verbose {
         // In verbose mode, include ALL logs
-        let all_recent_errors: Vec<LogEntry> = system_info.journal.recent_errors.iter()
+        let all_recent_errors: Vec<LogEntry> = system_info
+            .journal
+            .recent_errors
+            .iter()
             .map(|entry| LogEntry {
                 timestamp: entry.timestamp.clone(),
                 unit: entry.unit.clone(),
@@ -111,7 +127,10 @@ pub fn create_system_health_report(
             })
             .collect();
 
-        let all_boot_errors: Vec<LogEntry> = system_info.journal.boot_errors.iter()
+        let all_boot_errors: Vec<LogEntry> = system_info
+            .journal
+            .boot_errors
+            .iter()
             .map(|entry| LogEntry {
                 timestamp: entry.timestamp.clone(),
                 unit: entry.unit.clone(),
@@ -123,7 +142,10 @@ pub fn create_system_health_report(
         (all_recent_errors, all_boot_errors)
     } else {
         // In normal mode, only include significant errors
-        let significant_recent_errors: Vec<LogEntry> = system_info.journal.recent_errors.iter()
+        let significant_recent_errors: Vec<LogEntry> = system_info
+            .journal
+            .recent_errors
+            .iter()
             .filter(|entry| !is_common_non_critical_error(&entry.message))
             .map(|entry| LogEntry {
                 timestamp: entry.timestamp.clone(),
@@ -133,7 +155,10 @@ pub fn create_system_health_report(
             })
             .collect();
 
-        let significant_boot_errors: Vec<LogEntry> = system_info.journal.boot_errors.iter()
+        let significant_boot_errors: Vec<LogEntry> = system_info
+            .journal
+            .boot_errors
+            .iter()
             .filter(|entry| !is_common_non_critical_error(&entry.message))
             .map(|entry| LogEntry {
                 timestamp: entry.timestamp.clone(),
@@ -158,7 +183,9 @@ pub fn create_system_health_report(
     };
 
     // Create container status
-    let healthy_containers: Vec<ContainerInfo> = system_info.containers.iter()
+    let healthy_containers: Vec<ContainerInfo> = system_info
+        .containers
+        .iter()
         .filter(|c| c.status.contains("Up"))
         .map(|c| ContainerInfo {
             name: c.name.clone(),
@@ -167,7 +194,9 @@ pub fn create_system_health_report(
         })
         .collect();
 
-    let unhealthy_containers: Vec<ContainerInfo> = system_info.containers.iter()
+    let unhealthy_containers: Vec<ContainerInfo> = system_info
+        .containers
+        .iter()
         .filter(|c| !c.status.contains("Up"))
         .map(|c| ContainerInfo {
             name: c.name.clone(),
@@ -184,11 +213,15 @@ pub fn create_system_health_report(
         } else {
             "unknown".to_string()
         },
-        containers: system_info.containers.iter().map(|c| ContainerInfo {
-            name: c.name.clone(),
-            status: c.status.clone(),
-            ports: c.ports.clone(),
-        }).collect(),
+        containers: system_info
+            .containers
+            .iter()
+            .map(|c| ContainerInfo {
+                name: c.name.clone(),
+                status: c.status.clone(),
+                ports: c.ports.clone(),
+            })
+            .collect(),
         healthy_count: healthy_containers.len(),
         unhealthy_count: unhealthy_containers.len(),
         total_count: system_info.containers.len(),
@@ -196,13 +229,19 @@ pub fn create_system_health_report(
 
     // Create issues list
     let mut issues = Vec::new();
-    
+
     if has_failed_services {
         issues.push(Issue {
             category: "service".to_string(),
             severity: "critical".to_string(),
-            message: format!("{} failed systemd units", system_info.systemd.failed_units.len()),
-            details: Some(format!("Failed units: {}", system_info.systemd.failed_units.join(", "))),
+            message: format!(
+                "{} failed systemd units",
+                system_info.systemd.failed_units.len()
+            ),
+            details: Some(format!(
+                "Failed units: {}",
+                system_info.systemd.failed_units.join(", ")
+            )),
         });
     }
 
@@ -220,8 +259,14 @@ pub fn create_system_health_report(
             category: "container".to_string(),
             severity: "warning".to_string(),
             message: format!("{} unhealthy containers", unhealthy_containers.len()),
-            details: Some(format!("Unhealthy containers: {}", 
-                unhealthy_containers.iter().map(|c| c.name.as_str()).collect::<Vec<_>>().join(", "))),
+            details: Some(format!(
+                "Unhealthy containers: {}",
+                unhealthy_containers
+                    .iter()
+                    .map(|c| c.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
         });
     }
 
@@ -274,7 +319,9 @@ fn is_common_non_critical_error(message: &str) -> bool {
         "gdbus.error:org.freedesktop.dbus.error.serviceunknown",
         "davincipanel.rules",
     ];
-    
+
     let message_lower = message.to_lowercase();
-    common_errors.iter().any(|error| message_lower.contains(error))
-} 
+    common_errors
+        .iter()
+        .any(|error| message_lower.contains(error))
+}

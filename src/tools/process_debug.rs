@@ -36,7 +36,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
@@ -74,7 +74,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
@@ -114,7 +114,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
@@ -152,7 +152,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
@@ -190,7 +190,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
@@ -228,7 +228,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
@@ -266,7 +266,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
@@ -304,7 +304,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
-} 
+}

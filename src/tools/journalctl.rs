@@ -6,7 +6,7 @@ impl DebugTools {
         let start_time = std::time::Instant::now();
         let mut command = Command::new("journalctl");
         command.arg("--no-pager");
-        
+
         if let Some(n) = lines {
             command.args(["-n", &n.to_string()]);
         } else {
@@ -42,15 +42,19 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
-    pub async fn run_journalctl_service(&self, service_name: &str, lines: Option<usize>) -> DebugToolResult {
+    pub async fn run_journalctl_service(
+        &self,
+        service_name: &str,
+        lines: Option<usize>,
+    ) -> DebugToolResult {
         let start_time = std::time::Instant::now();
         let mut command = Command::new("journalctl");
         command.args(["-u", service_name, "--no-pager"]);
-        
+
         if let Some(n) = lines {
             command.args(["-n", &n.to_string()]);
         } else {
@@ -72,8 +76,11 @@ impl DebugTools {
 
                 DebugToolResult {
                     tool_name: "journalctl_service".to_string(),
-                    command: format!("journalctl -u {} --no-pager -n {}", 
-                        service_name, lines.unwrap_or(50)),
+                    command: format!(
+                        "journalctl -u {} --no-pager -n {}",
+                        service_name,
+                        lines.unwrap_or(50)
+                    ),
                     success,
                     output: output_str,
                     error: error_str,
@@ -87,7 +94,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
@@ -125,7 +132,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
@@ -133,7 +140,7 @@ impl DebugTools {
         let start_time = std::time::Instant::now();
         let mut command = Command::new("journalctl");
         command.args(["-p", "err", "--no-pager"]);
-        
+
         if let Some(n) = lines {
             command.args(["-n", &n.to_string()]);
         } else {
@@ -169,7 +176,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
-} 
+}

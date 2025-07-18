@@ -1,17 +1,25 @@
+use crate::cli::AIProvider as CliAIProvider;
+use crate::known_issues::{IssueCategory, KnownIssuesDatabase};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use crate::cli::AIProvider as CliAIProvider;
-use crate::known_issues::{KnownIssuesDatabase, IssueCategory};
 
 #[async_trait]
 pub trait AIProvider: Send + Sync {
     async fn analyze(&self, input: &str) -> Result<String, AIError>;
-    async fn analyze_with_known_issues(&self, input: &str, category: Option<IssueCategory>) -> Result<String, AIError>;
+    async fn analyze_with_known_issues(
+        &self,
+        input: &str,
+        category: Option<IssueCategory>,
+    ) -> Result<String, AIError>;
     /// Answer a user question about their system or issue
-    async fn answer_question(&self, question: &str, system_context: &str) -> Result<String, AIError>;
+    async fn answer_question(
+        &self,
+        question: &str,
+        system_context: &str,
+    ) -> Result<String, AIError>;
     fn name(&self) -> &str;
 }
 
@@ -77,7 +85,12 @@ impl AIClient {
             "openai" => AIProviderType::OpenAI,
             "anthropic" => AIProviderType::Anthropic,
             "local" => AIProviderType::Local,
-            _ => return Err(AIError::ConfigError(format!("Unknown provider: {}", provider))),
+            _ => {
+                return Err(AIError::ConfigError(format!(
+                    "Unknown provider: {}",
+                    provider
+                )));
+            }
         };
 
         let api_key = env::var("AI_API_KEY").ok();
@@ -107,7 +120,14 @@ impl AIClient {
         Self::new(config).await
     }
 
-    pub async fn from_cli(cli_provider: &CliAIProvider, api_key: Option<String>, model: Option<String>, base_url: Option<String>, max_tokens: Option<u32>, temperature: Option<f32>) -> Result<Self, AIError> {
+    pub async fn from_cli(
+        cli_provider: &CliAIProvider,
+        api_key: Option<String>,
+        model: Option<String>,
+        base_url: Option<String>,
+        max_tokens: Option<u32>,
+        temperature: Option<f32>,
+    ) -> Result<Self, AIError> {
         let provider_type = match cli_provider {
             CliAIProvider::OpenAI => AIProviderType::OpenAI,
             CliAIProvider::Anthropic => AIProviderType::Anthropic,
@@ -143,10 +163,17 @@ impl AIProvider for AIClient {
         }
     }
 
-    async fn analyze_with_known_issues(&self, input: &str, category: Option<IssueCategory>) -> Result<String, AIError> {
+    async fn analyze_with_known_issues(
+        &self,
+        input: &str,
+        category: Option<IssueCategory>,
+    ) -> Result<String, AIError> {
         // Get relevant known issues for this context
-        let relevant_issues = self.known_issues.get_relevant_issues_for_context(input, category).await;
-        
+        let relevant_issues = self
+            .known_issues
+            .get_relevant_issues_for_context(input, category)
+            .await;
+
         // Build enhanced prompt with known issues
         let mut enhanced_input = input.to_string();
         if !relevant_issues.is_empty() {
@@ -154,7 +181,8 @@ impl AIProvider for AIClient {
             for issue in relevant_issues {
                 enhanced_input.push_str(&format!("- {}: {}\n", issue.title, issue.description));
             }
-            enhanced_input.push_str("\nConsider these known issues when analyzing the system state.\n");
+            enhanced_input
+                .push_str("\nConsider these known issues when analyzing the system state.\n");
         }
 
         match self.config.provider {
@@ -164,10 +192,17 @@ impl AIProvider for AIClient {
         }
     }
 
-    async fn answer_question(&self, question: &str, system_context: &str) -> Result<String, AIError> {
+    async fn answer_question(
+        &self,
+        question: &str,
+        system_context: &str,
+    ) -> Result<String, AIError> {
         // Get relevant known issues for this context
-        let relevant_issues = self.known_issues.get_relevant_issues_for_context(question, None).await;
-        
+        let relevant_issues = self
+            .known_issues
+            .get_relevant_issues_for_context(question, None)
+            .await;
+
         // Build context with known issues
         let mut enhanced_context = system_context.to_string();
         if !relevant_issues.is_empty() {
@@ -178,9 +213,18 @@ impl AIProvider for AIClient {
         }
 
         match self.config.provider {
-            AIProviderType::OpenAI => self.answer_question_openai(question, &enhanced_context).await,
-            AIProviderType::Anthropic => self.answer_question_anthropic(question, &enhanced_context).await,
-            AIProviderType::Local => self.answer_question_local(question, &enhanced_context).await,
+            AIProviderType::OpenAI => {
+                self.answer_question_openai(question, &enhanced_context)
+                    .await
+            }
+            AIProviderType::Anthropic => {
+                self.answer_question_anthropic(question, &enhanced_context)
+                    .await
+            }
+            AIProviderType::Local => {
+                self.answer_question_local(question, &enhanced_context)
+                    .await
+            }
         }
     }
 
@@ -195,10 +239,16 @@ impl AIProvider for AIClient {
 
 impl AIClient {
     async fn analyze_openai(&self, input: &str) -> Result<String, AIError> {
-        let api_key = self.config.api_key.as_ref()
+        let api_key = self
+            .config
+            .api_key
+            .as_ref()
             .ok_or_else(|| AIError::ConfigError("OpenAI API key not found".to_string()))?;
 
-        let base_url = self.config.base_url.as_deref()
+        let base_url = self
+            .config
+            .base_url
+            .as_deref()
             .unwrap_or("https://api.openai.com/v1");
 
         let messages = vec![
@@ -246,7 +296,8 @@ If no actionable issues are found, state: 'System appears healthy. Any ACPI/BIOS
             "temperature": self.config.temperature.unwrap_or(0.7),
         });
 
-        let response = self.client
+        let response = self
+            .client
             .post(&format!("{}/chat/completions", base_url))
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
@@ -256,11 +307,14 @@ If no actionable issues are found, state: 'System appears healthy. Any ACPI/BIOS
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            return Err(AIError::APIError(format!("OpenAI API error: {}", error_text)));
+            return Err(AIError::APIError(format!(
+                "OpenAI API error: {}",
+                error_text
+            )));
         }
 
         let response_json: serde_json::Value = response.json().await?;
-        
+
         let content = response_json["choices"][0]["message"]["content"]
             .as_str()
             .ok_or_else(|| AIError::APIError("Invalid response format".to_string()))?;
@@ -269,10 +323,16 @@ If no actionable issues are found, state: 'System appears healthy. Any ACPI/BIOS
     }
 
     async fn analyze_anthropic(&self, input: &str) -> Result<String, AIError> {
-        let api_key = self.config.api_key.as_ref()
+        let api_key = self
+            .config
+            .api_key
+            .as_ref()
             .ok_or_else(|| AIError::ConfigError("Anthropic API key not found".to_string()))?;
 
-        let base_url = self.config.base_url.as_deref()
+        let base_url = self
+            .config
+            .base_url
+            .as_deref()
             .unwrap_or("https://api.anthropic.com/v1");
 
         let request_body = serde_json::json!({
@@ -314,7 +374,8 @@ If no actionable issues are found, state: 'System appears healthy. Any ACPI/BIOS
             ]
         });
 
-        let response = self.client
+        let response = self
+            .client
             .post(&format!("{}/messages", base_url))
             .header("x-api-key", api_key)
             .header("anthropic-version", "2023-06-01")
@@ -325,11 +386,14 @@ If no actionable issues are found, state: 'System appears healthy. Any ACPI/BIOS
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            return Err(AIError::APIError(format!("Anthropic API error: {}", error_text)));
+            return Err(AIError::APIError(format!(
+                "Anthropic API error: {}",
+                error_text
+            )));
         }
 
         let response_json: serde_json::Value = response.json().await?;
-        
+
         let content = response_json["content"][0]["text"]
             .as_str()
             .ok_or_else(|| AIError::APIError("Invalid response format".to_string()))?;
@@ -340,8 +404,11 @@ If no actionable issues are found, state: 'System appears healthy. Any ACPI/BIOS
     async fn analyze_local(&self, input: &str) -> Result<String, AIError> {
         // For local models, we'll use a simple approach that could be extended
         // to support Ollama, llama.cpp, or other local model servers
-        
-        let base_url = self.config.base_url.as_deref()
+
+        let base_url = self
+            .config
+            .base_url
+            .as_deref()
             .unwrap_or("http://localhost:11434");
 
         // Try Ollama first
@@ -350,7 +417,10 @@ If no actionable issues are found, state: 'System appears healthy. Any ACPI/BIOS
         }
 
         // Fallback to a simple local analysis
-        Ok(format!("[Local AI] Analysis of system information: {}. This is a placeholder response. To use a real local model, configure Ollama or another local model server.", input))
+        Ok(format!(
+            "[Local AI] Analysis of system information: {}. This is a placeholder response. To use a real local model, configure Ollama or another local model server.",
+            input
+        ))
     }
 
     async fn try_ollama(&self, base_url: &str, input: &str) -> Result<String, AIError> {
@@ -402,7 +472,8 @@ Analyze the following system information: {}", input),
             }
         });
 
-        let response = self.client
+        let response = self
+            .client
             .post(&format!("{}/api/generate", base_url))
             .header("Content-Type", "application/json")
             .json(&request_body)
@@ -414,7 +485,7 @@ Analyze the following system information: {}", input),
         }
 
         let response_json: serde_json::Value = response.json().await?;
-        
+
         let content = response_json["response"]
             .as_str()
             .ok_or_else(|| AIError::LocalError("Invalid Ollama response format".to_string()))?;
@@ -422,11 +493,21 @@ Analyze the following system information: {}", input),
         Ok(content.to_string())
     }
 
-    async fn answer_question_openai(&self, question: &str, system_context: &str) -> Result<String, AIError> {
-        let api_key = self.config.api_key.as_ref()
+    async fn answer_question_openai(
+        &self,
+        question: &str,
+        system_context: &str,
+    ) -> Result<String, AIError> {
+        let api_key = self
+            .config
+            .api_key
+            .as_ref()
             .ok_or_else(|| AIError::ConfigError("OpenAI API key not found".to_string()))?;
 
-        let base_url = self.config.base_url.as_deref()
+        let base_url = self
+            .config
+            .base_url
+            .as_deref()
             .unwrap_or("https://api.openai.com/v1");
 
         let messages = vec![
@@ -456,7 +537,8 @@ Your goal is to help the user resolve their issue, not to perform a general syst
             "temperature": self.config.temperature.unwrap_or(0.7),
         });
 
-        let response = self.client
+        let response = self
+            .client
             .post(&format!("{}/chat/completions", base_url))
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
@@ -466,11 +548,14 @@ Your goal is to help the user resolve their issue, not to perform a general syst
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            return Err(AIError::APIError(format!("OpenAI API error: {}", error_text)));
+            return Err(AIError::APIError(format!(
+                "OpenAI API error: {}",
+                error_text
+            )));
         }
 
         let response_json: serde_json::Value = response.json().await?;
-        
+
         let content = response_json["choices"][0]["message"]["content"]
             .as_str()
             .ok_or_else(|| AIError::APIError("Invalid response format".to_string()))?;
@@ -478,11 +563,21 @@ Your goal is to help the user resolve their issue, not to perform a general syst
         Ok(content.to_string())
     }
 
-    async fn answer_question_anthropic(&self, question: &str, system_context: &str) -> Result<String, AIError> {
-        let api_key = self.config.api_key.as_ref()
+    async fn answer_question_anthropic(
+        &self,
+        question: &str,
+        system_context: &str,
+    ) -> Result<String, AIError> {
+        let api_key = self
+            .config
+            .api_key
+            .as_ref()
             .ok_or_else(|| AIError::ConfigError("Anthropic API key not found".to_string()))?;
 
-        let base_url = self.config.base_url.as_deref()
+        let base_url = self
+            .config
+            .base_url
+            .as_deref()
             .unwrap_or("https://api.anthropic.com/v1");
 
         let request_body = serde_json::json!({
@@ -507,7 +602,8 @@ Your goal is to help the user resolve their issue, not to perform a general syst
             ]
         });
 
-        let response = self.client
+        let response = self
+            .client
             .post(&format!("{}/messages", base_url))
             .header("x-api-key", api_key)
             .header("anthropic-version", "2023-06-01")
@@ -518,11 +614,14 @@ Your goal is to help the user resolve their issue, not to perform a general syst
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            return Err(AIError::APIError(format!("Anthropic API error: {}", error_text)));
+            return Err(AIError::APIError(format!(
+                "Anthropic API error: {}",
+                error_text
+            )));
         }
 
         let response_json: serde_json::Value = response.json().await?;
-        
+
         let content = response_json["content"][0]["text"]
             .as_str()
             .ok_or_else(|| AIError::APIError("Invalid response format".to_string()))?;
@@ -530,20 +629,38 @@ Your goal is to help the user resolve their issue, not to perform a general syst
         Ok(content.to_string())
     }
 
-    async fn answer_question_local(&self, question: &str, system_context: &str) -> Result<String, AIError> {
-        let base_url = self.config.base_url.as_deref()
+    async fn answer_question_local(
+        &self,
+        question: &str,
+        system_context: &str,
+    ) -> Result<String, AIError> {
+        let base_url = self
+            .config
+            .base_url
+            .as_deref()
             .unwrap_or("http://localhost:11434");
 
         // Try Ollama first
-        if let Ok(response) = self.try_ollama_question(base_url, question, system_context).await {
+        if let Ok(response) = self
+            .try_ollama_question(base_url, question, system_context)
+            .await
+        {
             return Ok(response);
         }
 
         // Fallback response
-        Ok(format!("[Local AI] Question: {}. Context available but using placeholder response. To use a real local model, configure Ollama or another local model server.", question))
+        Ok(format!(
+            "[Local AI] Question: {}. Context available but using placeholder response. To use a real local model, configure Ollama or another local model server.",
+            question
+        ))
     }
 
-    async fn try_ollama_question(&self, base_url: &str, question: &str, system_context: &str) -> Result<String, AIError> {
+    async fn try_ollama_question(
+        &self,
+        base_url: &str,
+        question: &str,
+        system_context: &str,
+    ) -> Result<String, AIError> {
         let request_body = serde_json::json!({
             "model": self.config.model,
             "prompt": format!("You are an experienced Linux system administrator and troubleshooting expert. Your role is to help users resolve their system issues by:
@@ -568,7 +685,8 @@ User Question: {}", system_context, question),
             }
         });
 
-        let response = self.client
+        let response = self
+            .client
             .post(&format!("{}/api/generate", base_url))
             .header("Content-Type", "application/json")
             .json(&request_body)
@@ -580,7 +698,7 @@ User Question: {}", system_context, question),
         }
 
         let response_json: serde_json::Value = response.json().await?;
-        
+
         let content = response_json["response"]
             .as_str()
             .ok_or_else(|| AIError::LocalError("Invalid Ollama response format".to_string()))?;
@@ -598,11 +716,19 @@ impl AIProvider for DummyAI {
         Ok("System appears healthy. Any ACPI/BIOS errors shown above are often normal on Linux systems and can be ignored unless you're experiencing specific hardware problems.".to_string())
     }
 
-    async fn analyze_with_known_issues(&self, _input: &str, _category: Option<IssueCategory>) -> Result<String, AIError> {
+    async fn analyze_with_known_issues(
+        &self,
+        _input: &str,
+        _category: Option<IssueCategory>,
+    ) -> Result<String, AIError> {
         Ok("System appears healthy. Any ACPI/BIOS errors shown above are often normal on Linux systems and can be ignored unless you're experiencing specific hardware problems.".to_string())
     }
 
-    async fn answer_question(&self, _question: &str, _system_context: &str) -> Result<String, AIError> {
+    async fn answer_question(
+        &self,
+        _question: &str,
+        _system_context: &str,
+    ) -> Result<String, AIError> {
         Ok("I cannot answer that question.".to_string())
     }
 
@@ -623,11 +749,27 @@ pub async fn create_ai_provider() -> Result<Box<dyn AIProvider>, AIError> {
 }
 
 // Factory function to create AI provider from CLI
-pub async fn create_ai_provider_from_cli(cli_provider: &CliAIProvider, api_key: Option<String>, model: Option<String>, base_url: Option<String>, max_tokens: Option<u32>, temperature: Option<f32>) -> Result<Box<dyn AIProvider>, AIError> {
-    if let Ok(client) = AIClient::from_cli(cli_provider, api_key, model, base_url, max_tokens, temperature).await {
+pub async fn create_ai_provider_from_cli(
+    cli_provider: &CliAIProvider,
+    api_key: Option<String>,
+    model: Option<String>,
+    base_url: Option<String>,
+    max_tokens: Option<u32>,
+    temperature: Option<f32>,
+) -> Result<Box<dyn AIProvider>, AIError> {
+    if let Ok(client) = AIClient::from_cli(
+        cli_provider,
+        api_key,
+        model,
+        base_url,
+        max_tokens,
+        temperature,
+    )
+    .await
+    {
         return Ok(Box::new(client));
     }
 
     // Fallback to dummy AI
     Ok(Box::new(DummyAI))
-} 
+}

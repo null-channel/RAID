@@ -36,7 +36,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
@@ -74,7 +74,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
@@ -112,7 +112,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
@@ -150,7 +150,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
@@ -187,7 +187,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
@@ -225,14 +225,16 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
     pub async fn run_find_large_files(&self, path: &str) -> DebugToolResult {
         let start_time = std::time::Instant::now();
         let mut command = Command::new("find");
-        command.args([path, "-type", "f", "-size", "+100M", "-exec", "ls", "-lh", "{}", ";"]);
+        command.args([
+            path, "-type", "f", "-size", "+100M", "-exec", "ls", "-lh", "{}", ";",
+        ]);
 
         let result = command.output();
         let execution_time = start_time.elapsed().as_millis() as u64;
@@ -263,7 +265,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
@@ -301,7 +303,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
@@ -338,7 +340,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
-} 
+}

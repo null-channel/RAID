@@ -36,7 +36,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
@@ -74,7 +74,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
@@ -112,7 +112,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
@@ -150,7 +150,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
@@ -188,7 +188,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
@@ -226,7 +226,7 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
@@ -264,14 +264,19 @@ impl DebugTools {
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
     pub async fn run_docker_ps(&self) -> DebugToolResult {
         let start_time = std::time::Instant::now();
         let mut command = Command::new("docker");
-        command.args(["ps", "-a", "--format", "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}"]);
+        command.args([
+            "ps",
+            "-a",
+            "--format",
+            "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}",
+        ]);
 
         let result = command.output();
         let execution_time = start_time.elapsed().as_millis() as u64;
@@ -309,7 +314,11 @@ impl DebugTools {
     pub async fn run_docker_ps_running(&self) -> DebugToolResult {
         let start_time = std::time::Instant::now();
         let mut command = Command::new("docker");
-        command.args(["ps", "--format", "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}"]);
+        command.args([
+            "ps",
+            "--format",
+            "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}",
+        ]);
 
         let result = command.output();
         let execution_time = start_time.elapsed().as_millis() as u64;
@@ -347,7 +356,12 @@ impl DebugTools {
     pub async fn run_docker_inspect(&self, container_name: &str) -> DebugToolResult {
         let start_time = std::time::Instant::now();
         let mut command = Command::new("docker");
-        command.args(["inspect", container_name, "--format", "{{.State.Status}} - {{.State.Running}} - {{.Config.Image}}"]);
+        command.args([
+            "inspect",
+            container_name,
+            "--format",
+            "{{.State.Status}} - {{.State.Running}} - {{.Config.Image}}",
+        ]);
 
         let result = command.output();
         let execution_time = start_time.elapsed().as_millis() as u64;
@@ -364,7 +378,10 @@ impl DebugTools {
 
                 DebugToolResult {
                     tool_name: "docker_inspect".to_string(),
-                    command: format!("docker inspect {} --format \"{{{{.State.Status}}}} - {{{{.State.Running}}}} - {{{{.Config.Image}}}}\"", container_name),
+                    command: format!(
+                        "docker inspect {} --format \"{{{{.State.Status}}}} - {{{{.State.Running}}}} - {{{{.Config.Image}}}}\"",
+                        container_name
+                    ),
                     success,
                     output: output_str,
                     error: error_str,
@@ -373,26 +390,33 @@ impl DebugTools {
             }
             Err(e) => DebugToolResult {
                 tool_name: "docker_inspect".to_string(),
-                command: format!("docker inspect {} --format \"{{{{.State.Status}}}} - {{{{.State.Running}}}} - {{{{.Config.Image}}}}\"", container_name),
+                command: format!(
+                    "docker inspect {} --format \"{{{{.State.Status}}}} - {{{{.State.Running}}}} - {{{{.Config.Image}}}}\"",
+                    container_name
+                ),
                 success: false,
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
 
-    pub async fn run_docker_logs(&self, container_name: &str, lines: Option<usize>) -> DebugToolResult {
+    pub async fn run_docker_logs(
+        &self,
+        container_name: &str,
+        lines: Option<usize>,
+    ) -> DebugToolResult {
         let start_time = std::time::Instant::now();
         let mut command = Command::new("docker");
         command.args(["logs"]);
-        
+
         if let Some(n) = lines {
             command.args(["--tail", &n.to_string()]);
         } else {
             command.args(["--tail", "20"]); // Default to 20 lines
         }
-        
+
         command.arg(container_name);
 
         let result = command.output();
@@ -410,7 +434,11 @@ impl DebugTools {
 
                 DebugToolResult {
                     tool_name: "docker_logs".to_string(),
-                    command: format!("docker logs --tail {} {}", lines.unwrap_or(20), container_name),
+                    command: format!(
+                        "docker logs --tail {} {}",
+                        lines.unwrap_or(20),
+                        container_name
+                    ),
                     success,
                     output: output_str,
                     error: error_str,
@@ -419,12 +447,16 @@ impl DebugTools {
             }
             Err(e) => DebugToolResult {
                 tool_name: "docker_logs".to_string(),
-                command: format!("docker logs --tail {} {}", lines.unwrap_or(20), container_name),
+                command: format!(
+                    "docker logs --tail {} {}",
+                    lines.unwrap_or(20),
+                    container_name
+                ),
                 success: false,
                 output: String::new(),
                 error: Some(e.to_string()),
                 execution_time_ms: execution_time,
-            }
+            },
         }
     }
-} 
+}

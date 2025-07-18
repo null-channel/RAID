@@ -3,7 +3,7 @@ use crate::sysinfo::SystemInfo;
 pub fn print_results(info: &SystemInfo, analysis: &str, verbose: bool) {
     println!("🔍 System Health Check");
     println!("{}", "=".repeat(50));
-    
+
     // System Overview
     println!("\n📊 System Overview");
     println!("{}", "-".repeat(30));
@@ -11,7 +11,7 @@ pub fn print_results(info: &SystemInfo, analysis: &str, verbose: bool) {
     println!("⚡ CPU: {}", info.cpu);
     println!("💾 Memory: {}/{}", info.free_memory, info.total_memory);
     println!("💿 Disk: {}/{}", info.free_disk, info.total_disk);
-    
+
     if info.kubernetes.is_kubernetes {
         println!("☸️  Kubernetes: Yes");
         if let Some(namespace) = &info.kubernetes.namespace {
@@ -23,18 +23,26 @@ pub fn print_results(info: &SystemInfo, analysis: &str, verbose: bool) {
     } else {
         println!("☸️  Kubernetes: No");
     }
-    
+
     if !info.containers.is_empty() {
         println!("🐳 Containers: {} running", info.containers.len());
     }
 
     // Determine if there are real issues
     let has_failed_services = !info.systemd.failed_units.is_empty();
-    let _has_significant_errors = info.journal.recent_errors.iter()
-        .any(|entry| !is_common_non_critical_error(&entry.message)) ||
-        info.journal.boot_errors.iter()
-        .any(|entry| !is_common_non_critical_error(&entry.message));
-    let has_container_issues = info.containers.iter()
+    let _has_significant_errors = info
+        .journal
+        .recent_errors
+        .iter()
+        .any(|entry| !is_common_non_critical_error(&entry.message))
+        || info
+            .journal
+            .boot_errors
+            .iter()
+            .any(|entry| !is_common_non_critical_error(&entry.message));
+    let has_container_issues = info
+        .containers
+        .iter()
         .any(|container| !container.status.contains("Up"));
 
     let mut anything_printed = false;
@@ -58,19 +66,22 @@ pub fn print_results(info: &SystemInfo, analysis: &str, verbose: bool) {
         // In verbose mode, show ALL logs
         let total_recent_errors = info.journal.recent_errors.len();
         let total_boot_errors = info.journal.boot_errors.len();
-        
+
         if total_recent_errors > 0 || total_boot_errors > 0 {
             println!("\n📋 System Logs (Verbose Mode - All Entries)");
             println!("{}", "-".repeat(30));
-            
+
             // Show all recent errors
             if total_recent_errors > 0 {
                 println!("Recent Errors ({}):", total_recent_errors);
                 for entry in &info.journal.recent_errors {
-                    println!("  🔴 [{}] {}: {}", entry.timestamp, entry.unit, entry.message);
+                    println!(
+                        "  🔴 [{}] {}: {}",
+                        entry.timestamp, entry.unit, entry.message
+                    );
                 }
             }
-            
+
             // Show all boot errors
             if total_boot_errors > 0 {
                 println!("Boot Errors ({}):", total_boot_errors);
@@ -88,7 +99,7 @@ pub fn print_results(info: &SystemInfo, analysis: &str, verbose: bool) {
         // In normal mode, filter logs as before
         let mut error_count = 0;
         let mut boot_error_count = 0;
-        
+
         // Count significant errors
         for entry in &info.journal.recent_errors {
             if !is_common_non_critical_error(&entry.message) {
@@ -104,14 +115,17 @@ pub fn print_results(info: &SystemInfo, analysis: &str, verbose: bool) {
         if error_count > 0 || boot_error_count > 0 {
             println!("\n⚠️  System Logs");
             println!("{}", "-".repeat(30));
-            
+
             // Show recent errors
             for entry in &info.journal.recent_errors {
                 if !is_common_non_critical_error(&entry.message) {
-                    println!("  🔴 [{}] {}: {}", entry.timestamp, entry.unit, entry.message);
+                    println!(
+                        "  🔴 [{}] {}: {}",
+                        entry.timestamp, entry.unit, entry.message
+                    );
                 }
             }
-            
+
             // Show boot errors
             for entry in &info.journal.boot_errors {
                 if !is_common_non_critical_error(&entry.message) {
@@ -130,10 +144,10 @@ pub fn print_results(info: &SystemInfo, analysis: &str, verbose: bool) {
     if !info.containers.is_empty() {
         println!("\n🐳 Container Status");
         println!("{}", "-".repeat(30));
-        
+
         let mut healthy_containers = 0;
         let mut unhealthy_containers = 0;
-        
+
         for container in &info.containers {
             if container.status.contains("Up") {
                 healthy_containers += 1;
@@ -148,13 +162,17 @@ pub fn print_results(info: &SystemInfo, analysis: &str, verbose: bool) {
                 }
             }
         }
-        
+
         if unhealthy_containers > 0 {
             anything_printed = true;
         }
-        
-        println!("  Summary: {}/{} containers healthy", healthy_containers, info.containers.len());
-        
+
+        println!(
+            "  Summary: {}/{} containers healthy",
+            healthy_containers,
+            info.containers.len()
+        );
+
         // In verbose mode, show all healthy containers too
         if verbose && healthy_containers > 0 && unhealthy_containers == 0 {
             for container in &info.containers {
@@ -168,7 +186,7 @@ pub fn print_results(info: &SystemInfo, analysis: &str, verbose: bool) {
     // Overall System Status
     println!("\n🎯 System Status");
     println!("{}", "-".repeat(30));
-    
+
     if !anything_printed {
         println!("✅ System appears healthy");
         println!("   All services running");
@@ -187,18 +205,29 @@ pub fn print_results(info: &SystemInfo, analysis: &str, verbose: bool) {
                 println!("   • {} total system errors", total_errors);
             }
         } else {
-            let error_count = info.journal.recent_errors.iter()
+            let error_count = info
+                .journal
+                .recent_errors
+                .iter()
                 .filter(|entry| !is_common_non_critical_error(&entry.message))
                 .count();
-            let boot_error_count = info.journal.boot_errors.iter()
+            let boot_error_count = info
+                .journal
+                .boot_errors
+                .iter()
                 .filter(|entry| !is_common_non_critical_error(&entry.message))
                 .count();
             if error_count > 0 || boot_error_count > 0 {
-                println!("   • {} significant system errors", error_count + boot_error_count);
+                println!(
+                    "   • {} significant system errors",
+                    error_count + boot_error_count
+                );
             }
         }
         if has_container_issues {
-            let unhealthy_count = info.containers.iter()
+            let unhealthy_count = info
+                .containers
+                .iter()
                 .filter(|c| !c.status.contains("Up"))
                 .count();
             println!("   • {} unhealthy containers", unhealthy_count);
@@ -209,7 +238,7 @@ pub fn print_results(info: &SystemInfo, analysis: &str, verbose: bool) {
     println!("\n🤖 AI Analysis");
     println!("{}", "-".repeat(30));
     println!("{}", analysis);
-    
+
     println!("\n{}", "=".repeat(50));
 }
 
@@ -238,38 +267,64 @@ fn is_common_non_critical_error(message: &str) -> bool {
         "gdbus.error:org.freedesktop.dbus.error.serviceunknown",
         "davincipanel.rules",
     ];
-    
+
     let message_lower = message.to_lowercase();
-    common_errors.iter().any(|error| message_lower.contains(error))
+    common_errors
+        .iter()
+        .any(|error| message_lower.contains(error))
 }
 
 pub fn print_history(checks: &[(i64, String, SystemInfo, String)]) {
     println!("\n📚 Historical System Checks");
     println!("{}", "=".repeat(50));
-    
+
     for (id, timestamp, system_info, analysis) in checks {
         println!("\n🔍 Check #{} - {}", id, timestamp);
         println!("{}", "-".repeat(40));
         println!("🖥️  OS: {}", system_info.os);
         println!("⚡ CPU: {}", system_info.cpu);
-        println!("☸️  Kubernetes: {}", if system_info.kubernetes.is_kubernetes { "Yes" } else { "No" });
-        
+        println!(
+            "☸️  Kubernetes: {}",
+            if system_info.kubernetes.is_kubernetes {
+                "Yes"
+            } else {
+                "No"
+            }
+        );
+
         // Determine if this check had issues
         let has_failed_services = !system_info.systemd.failed_units.is_empty();
-        let has_significant_errors = system_info.journal.recent_errors.iter()
-            .any(|entry| !is_common_non_critical_error(&entry.message)) ||
-            system_info.journal.boot_errors.iter()
-            .any(|entry| !is_common_non_critical_error(&entry.message));
-        let has_container_issues = system_info.containers.iter()
+        let has_significant_errors = system_info
+            .journal
+            .recent_errors
+            .iter()
+            .any(|entry| !is_common_non_critical_error(&entry.message))
+            || system_info
+                .journal
+                .boot_errors
+                .iter()
+                .any(|entry| !is_common_non_critical_error(&entry.message));
+        let has_container_issues = system_info
+            .containers
+            .iter()
             .any(|container| !container.status.contains("Up"));
-        
-        let status_icon = if !has_failed_services && !has_significant_errors && !has_container_issues {
-            "✅"
-        } else {
-            "⚠️"
-        };
-        
-        println!("{} Status: {}", status_icon, if !has_failed_services && !has_significant_errors && !has_container_issues { "Healthy" } else { "Issues Detected" });
+
+        let status_icon =
+            if !has_failed_services && !has_significant_errors && !has_container_issues {
+                "✅"
+            } else {
+                "⚠️"
+            };
+
+        println!(
+            "{} Status: {}",
+            status_icon,
+            if !has_failed_services && !has_significant_errors && !has_container_issues {
+                "Healthy"
+            } else {
+                "Issues Detected"
+            }
+        );
         println!("🤖 Analysis: {}", analysis);
     }
-} 
+}

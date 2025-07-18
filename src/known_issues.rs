@@ -17,7 +17,7 @@ pub struct KnownIssue {
     pub fix_commands: Vec<String>, // Commands to fix the issue
     pub prerequisites: Vec<String>, // Prerequisites for this issue
     pub distribution_specific: Option<String>, // Specific to a Linux distribution
-    pub tags: Vec<String>, // Additional tags for categorization
+    pub tags: Vec<String>,     // Additional tags for categorization
     pub next_steps: Vec<String>, // Steps to take before attempting fixes
 }
 
@@ -84,19 +84,30 @@ impl KnownIssuesDatabase {
     pub async fn search_issues(&self, query: &str) -> Vec<KnownIssue> {
         let issues = self.issues.read().await;
         let query_lower = query.to_lowercase();
-        
-        issues.values()
+
+        issues
+            .values()
             .filter(|issue| {
-                issue.title.to_lowercase().contains(&query_lower) ||
-                issue.description.to_lowercase().contains(&query_lower) ||
-                issue.keywords.iter().any(|k| query_lower.contains(&k.to_lowercase())) ||
-                issue.tags.iter().any(|t| query_lower.contains(&t.to_lowercase()))
+                issue.title.to_lowercase().contains(&query_lower)
+                    || issue.description.to_lowercase().contains(&query_lower)
+                    || issue
+                        .keywords
+                        .iter()
+                        .any(|k| query_lower.contains(&k.to_lowercase()))
+                    || issue
+                        .tags
+                        .iter()
+                        .any(|t| query_lower.contains(&t.to_lowercase()))
             })
             .cloned()
             .collect()
     }
 
-    pub async fn match_issues(&self, system_output: &str, category: Option<IssueCategory>) -> Vec<IssueMatch> {
+    pub async fn match_issues(
+        &self,
+        system_output: &str,
+        category: Option<IssueCategory>,
+    ) -> Vec<IssueMatch> {
         let issues = self.issues.read().await;
         let output_lower = system_output.to_lowercase();
         let mut matches = Vec::new();
@@ -154,7 +165,11 @@ impl KnownIssuesDatabase {
         }
 
         // Sort by confidence (highest first)
-        matches.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+        matches.sort_by(|a, b| {
+            b.confidence
+                .partial_cmp(&a.confidence)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         matches
     }
 
@@ -603,11 +618,16 @@ impl KnownIssuesDatabase {
         )
     }
 
-    pub async fn get_relevant_issues_for_context(&self, context: &str, category: Option<IssueCategory>) -> Vec<KnownIssue> {
+    pub async fn get_relevant_issues_for_context(
+        &self,
+        context: &str,
+        category: Option<IssueCategory>,
+    ) -> Vec<KnownIssue> {
         let matches = self.match_issues(context, category).await;
-        matches.into_iter()
+        matches
+            .into_iter()
             .filter(|m| m.confidence > 0.3) // Only include good matches
             .map(|m| m.issue)
             .collect()
     }
-} 
+}

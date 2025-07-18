@@ -2,16 +2,16 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 // Re-export all tool modules
-pub mod kubectl;
-pub mod journalctl;
-pub mod systemctl;
-pub mod system_info;
 pub mod container_info;
+pub mod journalctl;
+pub mod kubectl;
 pub mod network_debug;
-pub mod process_debug;
-pub mod storage_debug;
 pub mod performance_debug;
+pub mod process_debug;
 pub mod security_debug;
+pub mod storage_debug;
+pub mod system_info;
+pub mod systemctl;
 
 // Common structures used across tools
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -110,7 +110,7 @@ impl DebugTools {
     pub fn new() -> Self {
         let kubectl_path = Self::find_kubectl();
         let kubernetes_enabled = kubectl_path.is_some();
-        
+
         Self {
             kubernetes_enabled,
             kubectl_path,
@@ -126,4 +126,4 @@ impl DebugTools {
         }
         None
     }
-} 
+}
