@@ -1,0 +1,88 @@
+# Cursor Rules for wtf System Health Checker
+
+## 🧪 Testing Requirements
+1. **Feature Completion Rule**: When you have made a new feature, it is not considered done until there is a test proving its functionality.
+   - All new functions must have corresponding unit tests
+   - Integration tests required for new modules or major functionality
+   - Tests must cover both success and error cases
+   - Use `cargo test` to verify all tests pass before considering feature complete
+
+## 🦀 Rust Best Practices
+2. **Error Handling**: Always use proper Rust error handling
+   - Prefer `Result<T, E>` over `unwrap()` or `expect()` in production code
+   - Use `?` operator for error propagation
+   - Create custom error types when appropriate
+
+3. **Code Quality**:
+   - Run `cargo clippy` and address all warnings
+   - Format code with `cargo fmt` before committing
+   - Use meaningful variable and function names
+   - Add documentation comments for public APIs
+
+4. **Performance**:
+   - Avoid unnecessary allocations
+   - Use `&str` instead of `String` when possible
+   - Consider using `Box`, `Rc`, or `Arc` appropriately for large data structures
+
+## 📁 Project Structure
+5. **Module Organization**:
+   - Keep modules focused and cohesive
+   - Use `mod.rs` files to organize submodules
+   - Maintain clear separation between data collection (`tools/`) and presentation (`ui.rs`)
+
+6. **Dependencies**:
+   - Justify new dependencies in commit messages
+   - Prefer standard library solutions when reasonable
+   - Pin versions in `Cargo.toml` for stability
+
+## 🏥 System Health Checker Specific
+7. **Data Collection**:
+   - All system information gathering should be non-intrusive
+   - Handle missing tools or permissions gracefully
+   - Provide meaningful fallbacks when tools are unavailable
+
+8. **Output Format**:
+   - Maintain consistent emoji and formatting in output
+   - Ensure verbose mode provides additional detail without breaking normal output
+   - Test output formatting with various system states
+
+## 🔒 Security & Reliability
+9. **Input Validation**:
+   - Validate all external command outputs
+   - Handle potential command injection in shell commands
+   - Sanitize user inputs if any are added
+
+10. **Cross-platform Considerations**:
+    - Test on different Linux distributions when possible
+    - Handle missing system tools gracefully
+    - Document platform-specific requirements
+
+## 📝 Documentation
+11. **Code Documentation**:
+    - Document complex algorithms or system interactions
+    - Update README.md when adding new features
+    - Include examples in documentation when helpful
+
+12. **Commit Messages**:
+    - Use conventional commits format
+    - Include test information in commit messages
+    - Reference issues or requirements when applicable
+
+## 🔄 Development Workflow
+13. **Small Commits & PRs**: Keep changes focused and manageable
+    - Make a commit immediately after finishing a feature and all tests pass
+    - Strive to keep commits under 300 lines of changes
+    - Up to 700 lines is acceptable for complex features
+    - Each commit should represent a complete, working feature or fix
+    - Break large features into smaller, logical commits
+
+14. **Before Committing**:
+    - Run `cargo test` - all tests must pass
+    - Run `cargo clippy` - address all warnings
+    - Run `cargo fmt` - ensure consistent formatting
+    - Verify feature works as expected manually
+
+15. **Code Review**:
+    - Self-review code before requesting review
+    - Ensure tests demonstrate the feature works correctly
+    - Check that error handling covers edge cases 
