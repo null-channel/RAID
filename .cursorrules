@@ -64,7 +64,7 @@
     - Include examples in documentation when helpful
 
 12. **Commit Messages**:
-    - Use conventional commits format
+    - Use [conventional commits format](https://www.conventionalcommits.org/en/v1.0.0/)
     - Include test information in commit messages
     - Reference issues or requirements when applicable
 
@@ -85,4 +85,13 @@
 15. **Code Review**:
     - Self-review code before requesting review
     - Ensure tests demonstrate the feature works correctly
-    - Check that error handling covers edge cases 
+    - Check that error handling covers edge cases
+
+16. **Feature Branch Workflow**:
+    - Create a new feature branch for every feature request
+    - Follow [Conventional Commits v1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) specification
+    - Use format: `<type>[optional scope]: <description>`
+    - Common types: `feat:`, `fix:`, `test:`, `refactor:`, `docs:`, `chore:`
+    - Branch naming: use descriptive names like `feat/container-info` or `fix/memory-leak`
+    - Each commit should be atomic and follow conventional format
+    - Include `BREAKING CHANGE:` footer for breaking changes 

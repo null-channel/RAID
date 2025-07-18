@@ -40,8 +40,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Check if we have a problem description for AI agent mode
     if let Some(problem_description) = &cli.problem_description {
-        // AI agent mode - analyze the problem
-        run_ai_agent(&cli, problem_description).await?;
+        // Question answering mode - help the user resolve their issue
+        run_question_answering(&cli, problem_description).await?;
         return Ok(());
     }
 
@@ -170,6 +170,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ai::{DummyAI, AIProvider};
+
+    #[tokio::test]
+    async fn test_question_answering_functionality() {
+        let dummy_ai = DummyAI;
+        let question = "Why is my system slow?";
+        let context = "Operating System: Linux 6.15.6-arch1-1\nCPU: AMD Ryzen 9 7940HS\nMemory: 16GB/32GB\n";
+
+        let result = dummy_ai.answer_question(question, context).await;
+        
+        assert!(result.is_ok());
+        let answer = result.unwrap();
+        assert_eq!(answer, "I cannot answer that question.");
+    }
+
+    #[test]
+    fn test_question_context_building() {
+        // Test that context building doesn't panic and contains expected information
+        let test_context = format!(
+            "Operating System: {}\nCPU: {}\nMemory: {}/{}\n",
+            "Linux 6.15.6-arch1-1",
+            "AMD Ryzen 9 7940HS", 
+            "16GB",
+            "32GB"
+        );
+
+        assert!(test_context.contains("Linux 6.15.6-arch1-1"));
+        assert!(test_context.contains("AMD Ryzen 9 7940HS"));
+        assert!(test_context.contains("16GB/32GB"));
+    }
 }
 
 fn print_output(system_info: &SystemInfo, analysis: &str, output_format: &OutputFormat, verbose: bool) {
@@ -834,6 +869,68 @@ fn print_debug_result(result: &tools::DebugToolResult) {
     
     println!("\n=== Output ===");
     println!("{}", result.output);
+}
+
+async fn run_question_answering(cli: &Cli, question: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let ai_provider = create_ai_provider_from_cli(
+        &cli.ai_provider,
+        cli.ai_api_key.clone(),
+        Some(cli.get_model()),
+        cli.ai_base_url.clone(),
+        cli.ai_max_tokens,
+        cli.ai_temperature,
+    ).await?;
+
+    println!("❓ Question: {}", question);
+    println!("🤖 AI Assistant ({})", ai_provider.name());
+    println!("Gathering system information and analyzing your question...\n");
+
+    // Collect relevant system info
+    let sys_info = collect_system_info();
+    
+    // Build system context
+    let mut context = String::new();
+    context.push_str(&format!("Operating System: {}\n", sys_info.os));
+    context.push_str(&format!("CPU: {}\n", sys_info.cpu));
+    context.push_str(&format!("Memory: {}/{}\n", sys_info.free_memory, sys_info.total_memory));
+    context.push_str(&format!("Disk: {}/{}\n", sys_info.free_disk, sys_info.total_disk));
+    
+    if sys_info.kubernetes.is_kubernetes {
+        context.push_str(&format!("Kubernetes Environment: Yes\n"));
+        if let Some(namespace) = &sys_info.kubernetes.namespace {
+            context.push_str(&format!("  Namespace: {}\n", namespace));
+        }
+        if let Some(pod_name) = &sys_info.kubernetes.pod_name {
+            context.push_str(&format!("  Pod: {}\n", pod_name));
+        }
+    }
+    
+    if !sys_info.containers.is_empty() {
+        context.push_str(&format!("Containers: {} running\n", sys_info.containers.len()));
+    }
+    
+    if !sys_info.systemd.failed_units.is_empty() {
+        context.push_str(&format!("Failed Services: {}\n", sys_info.systemd.failed_units.join(", ")));
+    }
+    
+    // Include recent errors if any
+    if !sys_info.journal.recent_errors.is_empty() {
+        context.push_str(&format!("Recent Errors ({} total):\n", sys_info.journal.recent_errors.len()));
+        for (i, error) in sys_info.journal.recent_errors.iter().take(3).enumerate() {
+            context.push_str(&format!("  {}. {}: {}\n", i + 1, error.unit, error.message));
+        }
+        if sys_info.journal.recent_errors.len() > 3 {
+            context.push_str(&format!("  ... and {} more\n", sys_info.journal.recent_errors.len() - 3));
+        }
+    }
+
+    // Get AI answer
+    let answer = ai_provider.answer_question(question, &context).await?;
+    
+    println!("💡 Answer:");
+    println!("{}", answer);
+    
+    Ok(())
 }
 
 async fn run_ai_agent(cli: &Cli, problem_description: &str) -> Result<(), Box<dyn std::error::Error>> {
