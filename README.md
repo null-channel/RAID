@@ -1,6 +1,12 @@
+<div align="center">
+
+![RAID Logo](assets/raid-logo.png)
+
 # RAID - Rust Analysis and Informative Debugger
 
 RAID (Rust Analysis and Informative Debugger) is a comprehensive system health checker that leverages AI to analyze your system for potential issues, security concerns, and performance problems.
+
+</div>
 
 ## ⚠️ Project Status Warning
 
