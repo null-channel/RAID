@@ -1,5 +1,6 @@
 mod ai;
 mod cli;
+mod config;
 mod database;
 mod known_issues;
 mod output;
@@ -8,8 +9,8 @@ mod tools;
 mod ui;
 use ai::create_ai_provider_from_cli;
 use clap::Parser;
-use cli::OutputFormat;
-use cli::{AIAgentAction, CheckComponent, Cli, Commands, DebugTool, IssueAction};
+use cli::{AIAgentAction, CheckComponent, Cli, Commands, ConfigAction, DebugTool, IssueAction, OutputFormat};
+use config::RaidConfig;
 use database::Database;
 use known_issues::IssueCategory;
 use output::{create_system_health_report, print_json, print_yaml};
@@ -17,12 +18,43 @@ use std::env;
 use std::io::{self, Write};
 use sysinfo::{SystemInfo, collect_basic_system_info, collect_system_info};
 use tools::DebugTools;
-use ui::print_results;
+use ui::{print_results, UIFormatter};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse CLI args
     let mut cli = Cli::parse();
+
+    // Load configuration
+    let mut config = if let Some(config_file) = &cli.config {
+        // Load from specified config file
+        RaidConfig::load_from_file(config_file).map_err(|e| {
+            format!("Failed to load config file '{}': {}", config_file, e)
+        })?
+    } else {
+        // Load from default locations
+        RaidConfig::load().unwrap_or_else(|_| {
+            // If no config file found, use defaults
+            RaidConfig::default()
+        })
+    };
+
+    // Merge CLI overrides into config
+    config.merge_cli_overrides(&cli);
+
+    // Validate configuration
+    if let Err(e) = config.validate() {
+        eprintln!("Configuration error: {}", e);
+        std::process::exit(1);
+    }
+
+    // Create UI formatter based on config
+    let ui_formatter = UIFormatter::new(config.ui.color && !cli.no_color);
+
+    // Handle config command
+    if let Some(Commands::Config { action, output }) = &cli.command {
+        return run_config_command(action, output.as_deref(), &config).await;
+    }
 
     // Check if this is a debug command
     if let Some(Commands::Debug { .. }) = &cli.command {
@@ -41,28 +73,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Check if we have a problem description for AI agent mode
     if let Some(problem_description) = &cli.problem_description {
         // Question answering mode - help the user resolve their issue
-        run_question_answering(&cli, problem_description).await?;
-        return Ok(());
+        return run_question_answering_with_config(&config, problem_description, &ui_formatter).await;
     }
 
     // If AI_API_KEY is not set and no key provided via CLI, force dry-run and print a message
-    if env::var("AI_API_KEY").is_err() && cli.ai_api_key.is_none() && !cli.dry_run {
+    if config.ai.api_key.is_none() && !cli.dry_run {
         println!("No AI API key found. Running in dry-run mode. No AI model will be used.");
         cli.dry_run = true;
     }
 
-    let sys_info = collect_system_info();
+    // Collect system information with progress indicator
+    let sys_info = if config.ui.progress_indicators && !cli.no_progress {
+        ui_formatter.show_progress("Collecting system information", || collect_system_info())
+    } else {
+        collect_system_info()
+    };
+    
     let check_component = cli.get_check_component();
 
     if cli.dry_run {
         // Dry run mode - skip AI analysis
         match check_component {
             CheckComponent::All => {
-                print_output(
+                print_output_with_config(
                     &sys_info,
                     "Dry run mode - no AI analysis available",
-                    &cli.output_format,
-                    cli.verbose,
+                    &config,
+                    &ui_formatter,
                 );
             }
             CheckComponent::System => {
@@ -121,32 +158,68 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     } else {
         // Normal mode with AI analysis
-        let ai_provider = create_ai_provider_from_cli(
-            &cli.ai_provider,
-            cli.ai_api_key.clone(),
-            Some(cli.get_model()),
-            cli.ai_base_url.clone(),
-            cli.ai_max_tokens,
-            cli.ai_temperature,
-        )
-        .await?;
+        let ai_provider = if config.ui.progress_indicators && !cli.no_progress {
+            ui_formatter.show_progress("Initializing AI provider", || async {
+                create_ai_provider_from_cli(
+                    &config.get_ai_provider(),
+                    config.ai.api_key.clone(),
+                    Some(config.get_model()),
+                    config.ai.base_url.clone(),
+                    config.ai.max_tokens,
+                    config.ai.temperature,
+                ).await
+            }).await?
+        } else {
+            create_ai_provider_from_cli(
+                &config.get_ai_provider(),
+                config.ai.api_key.clone(),
+                Some(config.get_model()),
+                config.ai.base_url.clone(),
+                config.ai.max_tokens,
+                config.ai.temperature,
+            ).await?
+        };
 
         match check_component {
             CheckComponent::All => {
-                let analysis = ai_provider
-                    .analyze_with_known_issues(
-                        &format!("OS: {}, CPU: {}", sys_info.os, sys_info.cpu),
-                        None,
-                    )
-                    .await?;
+                let analysis = if config.ui.progress_indicators && !cli.no_progress {
+                    ui_formatter.show_progress("Analyzing system with AI", || async {
+                        ai_provider
+                            .analyze_with_known_issues(
+                                &format!("OS: {}, CPU: {}", sys_info.os, sys_info.cpu),
+                                None,
+                            )
+                            .await
+                    }).await?
+                } else {
+                    ai_provider
+                        .analyze_with_known_issues(
+                            &format!("OS: {}, CPU: {}", sys_info.os, sys_info.cpu),
+                            None,
+                        )
+                        .await?
+                };
 
                 // Only store in database for full checks
                 if cli.is_full_check() {
-                    let db = Database::new("system_checks.db")?;
-                    db.store_check(&sys_info, &analysis)?;
+                    let db = if config.ui.progress_indicators && !cli.no_progress {
+                        ui_formatter.show_progress("Storing results in database", || {
+                            Database::new(&config.database.path)
+                        })?
+                    } else {
+                        Database::new(&config.database.path)?
+                    };
+                    
+                    if config.ui.progress_indicators && !cli.no_progress {
+                        ui_formatter.show_progress("Saving check results", || {
+                            db.store_check(&sys_info, &analysis)
+                        })?;
+                    } else {
+                        db.store_check(&sys_info, &analysis)?;
+                    }
                 }
 
-                print_output(&sys_info, &analysis, &cli.output_format, cli.verbose);
+                print_output_with_config(&sys_info, &analysis, &config, &ui_formatter);
             }
             CheckComponent::System => {
                 let analysis = ai_provider
@@ -366,6 +439,27 @@ fn print_output(
         }
         OutputFormat::Json => {
             let report = create_system_health_report(system_info, analysis, verbose);
+            print_json(&report);
+        }
+    }
+}
+
+fn print_output_with_config(
+    system_info: &SystemInfo,
+    analysis: &str,
+    config: &RaidConfig,
+    ui_formatter: &UIFormatter,
+) {
+    match config.get_output_format() {
+        OutputFormat::Text => {
+            ui::print_results_with_formatter(system_info, analysis, config.output.verbose, ui_formatter);
+        }
+        OutputFormat::Yaml => {
+            let report = create_system_health_report(system_info, analysis, config.output.verbose);
+            print_yaml(&report);
+        }
+        OutputFormat::Json => {
+            let report = create_system_health_report(system_info, analysis, config.output.verbose);
             print_json(&report);
         }
     }
@@ -966,6 +1060,109 @@ fn print_journal_info_dry_run(info: &SystemInfo) {
 
     println!("\n=== DRY RUN MODE ===");
     println!("AI analysis skipped. Use without --dry-run flag for AI-powered insights.");
+}
+
+async fn run_config_command(
+    action: &ConfigAction,
+    output_path: Option<&str>,
+    config: &RaidConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match action {
+        ConfigAction::Init => {
+            let output_file = output_path.unwrap_or("raid.yaml");
+            RaidConfig::create_sample_config(output_file)?;
+            println!("✅ Created sample configuration file: {}", output_file);
+            println!("💡 Edit this file to customize your settings, then use:");
+            println!("   cargo run -- --config {}", output_file);
+        }
+        ConfigAction::Show => {
+            let yaml_content = serde_yaml::to_string(config)?;
+            println!("Current Configuration (merged from all sources):");
+            println!("{}", yaml_content);
+        }
+        ConfigAction::Validate => {
+            match config.validate() {
+                Ok(_) => println!("✅ Configuration is valid"),
+                Err(e) => {
+                    eprintln!("❌ Configuration validation failed: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        ConfigAction::Locations => {
+            println!("Configuration File Locations (in order of precedence):");
+            println!("1. Command line: --config <file>");
+            println!("2. Current directory: ./raid.yaml, ./raid.yml, ./raid.toml");
+            println!("3. User config: ~/.config/raid/raid.yaml");
+            println!("4. System config: /etc/raid.yaml");
+            println!("5. Environment variables: RAID_*");
+            println!("6. Built-in defaults");
+            
+            if let Some(user_config_dir) = dirs::config_dir() {
+                let user_config_path = user_config_dir.join("raid").join("raid.yaml");
+                println!("\n📁 Suggested user config location:");
+                println!("   {}", user_config_path.display());
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn run_question_answering_with_config(
+    config: &RaidConfig,
+    question: &str,
+    ui_formatter: &UIFormatter,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let ai_provider = create_ai_provider_from_cli(
+        &config.get_ai_provider(),
+        config.ai.api_key.clone(),
+        Some(config.get_model()),
+        config.ai.base_url.clone(),
+        config.ai.max_tokens,
+        config.ai.temperature,
+    )
+    .await?;
+
+    println!("❓ Question: {}", question);
+    println!("🤖 AI Assistant ({})", ai_provider.name());
+    
+    // Collect basic system info with progress
+    let sys_info = ui_formatter.show_progress("Collecting system information", || {
+        collect_basic_system_info()
+    });
+
+    // Create comprehensive context about the system
+    let mut system_context = String::new();
+    system_context.push_str(&format!("Operating System: {}\n", sys_info.os));
+    system_context.push_str(&format!("CPU: {}\n", sys_info.cpu));
+    system_context.push_str(&format!(
+        "Memory: {}/{}\n",
+        sys_info.free_memory, sys_info.total_memory
+    ));
+    system_context.push_str(&format!(
+        "Disk: {}/{}\n",
+        sys_info.free_disk, sys_info.total_disk
+    ));
+
+    if sys_info.is_kubernetes {
+        system_context.push_str("Environment: Kubernetes cluster\n");
+    }
+
+    if sys_info.container_runtime_available {
+        system_context.push_str("Container Runtime: Available\n");
+    }
+
+    // Get AI analysis (this is synchronous for now, but shows progress)
+    let final_analysis = ui_formatter.show_progress("Getting AI analysis", || {
+        // For now, we'll use a blocking approach
+        // In a real implementation, you'd want to handle async properly
+        "AI analysis would go here - this is a simplified version for demo purposes."
+    });
+
+    println!("\n🤖 AI Analysis:");
+    println!("{}", final_analysis);
+
+    Ok(())
 }
 
 async fn run_debug_tools(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {

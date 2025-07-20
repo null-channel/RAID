@@ -55,6 +55,18 @@ pub struct Cli {
     #[arg(long, short = 'o', value_enum, default_value = "text")]
     pub output_format: OutputFormat,
 
+    /// Configuration file path
+    #[arg(long, short = 'c')]
+    pub config: Option<String>,
+
+    /// Disable colored output
+    #[arg(long)]
+    pub no_color: bool,
+
+    /// Disable progress indicators
+    #[arg(long)]
+    pub no_progress: bool,
+
     /// Subcommand to execute
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -97,6 +109,15 @@ pub enum Commands {
         /// Search query (for search action)
         #[arg(long, short = 'q')]
         query: Option<String>,
+    },
+    /// Configuration management
+    Config {
+        /// Config action to perform
+        #[arg(value_enum)]
+        action: ConfigAction,
+        /// Output path for generated config (for init action)
+        #[arg(long, short = 'o')]
+        output: Option<String>,
     },
 }
 
@@ -150,6 +171,18 @@ pub enum IssueAction {
     Update,
     /// Delete an issue
     Delete,
+}
+
+#[derive(ValueEnum, Debug, Clone)]
+pub enum ConfigAction {
+    /// Initialize a new configuration file
+    Init,
+    /// Show current configuration (merged from all sources)
+    Show,
+    /// Validate configuration file
+    Validate,
+    /// Show configuration file locations
+    Locations,
 }
 
 #[derive(ValueEnum, Debug, Clone)]
@@ -252,6 +285,7 @@ impl Cli {
             Some(Commands::Check { component }) => matches!(component, CheckComponent::All),
             Some(Commands::Debug { .. }) => false, // Debug commands don't store in database
             Some(Commands::Issues { .. }) => false, // Issues commands don't store in database
+            Some(Commands::Config { .. }) => false, // Config commands don't store in database
             None => true,                          // Default to full check when no subcommand
         }
     }
@@ -262,6 +296,7 @@ impl Cli {
             Some(Commands::Check { component }) => component.clone(),
             Some(Commands::Debug { .. }) => CheckComponent::Debug,
             Some(Commands::Issues { .. }) => CheckComponent::All, // Issues commands default to all
+            Some(Commands::Config { .. }) => CheckComponent::All, // Config commands default to all
             None => CheckComponent::All,                          // Default to all if no subcommand
         }
     }
