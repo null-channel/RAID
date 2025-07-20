@@ -6,6 +6,7 @@ pub mod arch_debug;
 pub mod container_info;
 pub mod journalctl;
 pub mod kubectl;
+pub mod kubernetes_debug;
 pub mod network_debug;
 pub mod performance_debug;
 pub mod process_debug;

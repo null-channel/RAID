@@ -1343,6 +1343,71 @@ async fn run_debug_tools(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
                 let result = debug_tools.run_aur_helper_info().await;
                 print_debug_result(&result);
             }
+            // Kubernetes specific debugging tools
+            DebugTool::KubectlGetDeployments => {
+                let result = debug_tools.run_kubectl_get_deployments(namespace.as_deref()).await;
+                print_debug_result(&result);
+            }
+            DebugTool::KubectlGetConfigmaps => {
+                let result = debug_tools.run_kubectl_get_configmaps(namespace.as_deref()).await;
+                print_debug_result(&result);
+            }
+            DebugTool::KubectlLogs => {
+                if let Some(pod_name) = pod {
+                    let result = debug_tools.run_kubectl_logs(pod_name, namespace.as_deref(), *lines).await;
+                    print_debug_result(&result);
+                } else {
+                    println!("Error: Pod name is required for kubectl logs. Use --pod <pod-name>");
+                }
+            }
+            DebugTool::KubectlTopPods => {
+                let result = debug_tools.run_kubectl_top_pods(namespace.as_deref()).await;
+                print_debug_result(&result);
+            }
+            DebugTool::KubectlTopNodes => {
+                let result = debug_tools.run_kubectl_top_nodes().await;
+                print_debug_result(&result);
+            }
+            DebugTool::KubectlClusterInfo => {
+                let result = debug_tools.run_kubectl_cluster_info().await;
+                print_debug_result(&result);
+            }
+            DebugTool::KubectlGetPv => {
+                let result = debug_tools.run_kubectl_get_pv().await;
+                print_debug_result(&result);
+            }
+            DebugTool::KubectlGetPvc => {
+                let result = debug_tools.run_kubectl_get_pvc(namespace.as_deref()).await;
+                print_debug_result(&result);
+            }
+            DebugTool::KubeletStatus => {
+                let result = debug_tools.run_kubelet_status().await;
+                print_debug_result(&result);
+            }
+            DebugTool::KubeletLogs => {
+                let result = debug_tools.run_kubelet_logs(*lines).await;
+                print_debug_result(&result);
+            }
+            DebugTool::KubeletConfig => {
+                let result = debug_tools.run_kubelet_config().await;
+                print_debug_result(&result);
+            }
+            DebugTool::EtcdClusterHealth => {
+                let result = debug_tools.run_etcd_cluster_health().await;
+                print_debug_result(&result);
+            }
+            DebugTool::EtcdMemberList => {
+                let result = debug_tools.run_etcd_member_list().await;
+                print_debug_result(&result);
+            }
+            DebugTool::EtcdEndpointHealth => {
+                let result = debug_tools.run_etcd_endpoint_health().await;
+                print_debug_result(&result);
+            }
+            DebugTool::EtcdEndpointStatus => {
+                let result = debug_tools.run_etcd_endpoint_status().await;
+                print_debug_result(&result);
+            }
         },
         _ => {
             println!("Error: Debug command not found");
@@ -1486,6 +1551,23 @@ ARCH LINUX TOOLS:
 - needs_reboot: Check if reboot needed (kernel updates)
 - pacman_mirrorlist: Show active pacman mirrors
 - aur_helper_info: Show AUR helper information
+
+KUBERNETES TOOLS:
+- kubectl_get_deployments [--namespace <ns>]: Get deployments in namespace
+- kubectl_get_configmaps [--namespace <ns>]: Get ConfigMaps in namespace
+- kubectl_logs <pod_name> [--namespace <ns>] [--lines <n>]: Get pod logs
+- kubectl_top_pods [--namespace <ns>]: Get resource usage (top pods)
+- kubectl_top_nodes: Get resource usage (top nodes)
+- kubectl_cluster_info: Get cluster information
+- kubectl_get_pv: Get persistent volumes
+- kubectl_get_pvc [--namespace <ns>]: Get persistent volume claims
+- kubelet_status: Get kubelet service status
+- kubelet_logs [--lines <n>]: Get kubelet logs
+- kubelet_config: Get kubelet configuration
+- etcd_cluster_health: Check etcd cluster health
+- etcd_member_list: Get etcd member list
+- etcd_endpoint_health: Check etcd endpoint health
+- etcd_endpoint_status: Get etcd endpoint status and database size
 "#;
 
     // First, ask the AI which tools it wants to run
@@ -1643,7 +1725,47 @@ Select 2-5 most relevant tools based on the question."#,
             "systemctl_failed" => debug_tools.run_systemctl_failed().await,
             "needs_reboot" => debug_tools.run_needs_reboot().await,
             "pacman_mirrorlist" => debug_tools.run_pacman_mirrorlist().await,
-            "aur_helper_info" => debug_tools.run_aur_helper_info().await,
+                         "aur_helper_info" => debug_tools.run_aur_helper_info().await,
+            // Kubernetes specific tools
+            "kubectl_get_deployments" => {
+                let namespace = extract_arg(&parts, "--namespace");
+                debug_tools.run_kubectl_get_deployments(namespace.as_deref()).await
+            }
+            "kubectl_get_configmaps" => {
+                let namespace = extract_arg(&parts, "--namespace");
+                debug_tools.run_kubectl_get_configmaps(namespace.as_deref()).await
+            }
+            "kubectl_logs" => {
+                let pod_name = parts.get(1).map(|s| s.to_string());
+                let namespace = extract_arg(&parts, "--namespace");
+                let lines = extract_arg(&parts, "--lines").and_then(|s| s.parse().ok());
+                if let Some(pod) = pod_name {
+                    debug_tools.run_kubectl_logs(&pod, namespace.as_deref(), lines).await
+                } else {
+                    continue;
+                }
+            }
+            "kubectl_top_pods" => {
+                let namespace = extract_arg(&parts, "--namespace");
+                debug_tools.run_kubectl_top_pods(namespace.as_deref()).await
+            }
+            "kubectl_top_nodes" => debug_tools.run_kubectl_top_nodes().await,
+            "kubectl_cluster_info" => debug_tools.run_kubectl_cluster_info().await,
+            "kubectl_get_pv" => debug_tools.run_kubectl_get_pv().await,
+            "kubectl_get_pvc" => {
+                let namespace = extract_arg(&parts, "--namespace");
+                debug_tools.run_kubectl_get_pvc(namespace.as_deref()).await
+            }
+            "kubelet_status" => debug_tools.run_kubelet_status().await,
+            "kubelet_logs" => {
+                let lines = extract_arg(&parts, "--lines").and_then(|s| s.parse().ok());
+                debug_tools.run_kubelet_logs(lines).await
+            }
+            "kubelet_config" => debug_tools.run_kubelet_config().await,
+            "etcd_cluster_health" => debug_tools.run_etcd_cluster_health().await,
+            "etcd_member_list" => debug_tools.run_etcd_member_list().await,
+            "etcd_endpoint_health" => debug_tools.run_etcd_endpoint_health().await,
+            "etcd_endpoint_status" => debug_tools.run_etcd_endpoint_status().await,
             _ => {
                 println!("⚠️  Unknown tool: {}", tool_name);
                 continue;
@@ -1882,6 +2004,35 @@ async fn run_ai_agent(
                     DebugTool::NeedsReboot => debug_tools.run_needs_reboot().await,
                     DebugTool::PacmanMirrorlist => debug_tools.run_pacman_mirrorlist().await,
                     DebugTool::AurHelperInfo => debug_tools.run_aur_helper_info().await,
+                    // Kubernetes specific debugging tools
+                    DebugTool::KubectlGetDeployments => debug_tools.run_kubectl_get_deployments(namespace.as_deref()).await,
+                    DebugTool::KubectlGetConfigmaps => debug_tools.run_kubectl_get_configmaps(namespace.as_deref()).await,
+                    DebugTool::KubectlLogs => {
+                        if let Some(pod_name) = pod {
+                            debug_tools.run_kubectl_logs(&pod_name, namespace.as_deref(), lines).await
+                        } else {
+                            tools::DebugToolResult {
+                                tool_name: "kubectl_logs".to_string(),
+                                command: "kubectl logs".to_string(),
+                                success: false,
+                                output: String::new(),
+                                error: Some("Pod name required".to_string()),
+                                execution_time_ms: 0,
+                            }
+                        }
+                    }
+                    DebugTool::KubectlTopPods => debug_tools.run_kubectl_top_pods(namespace.as_deref()).await,
+                    DebugTool::KubectlTopNodes => debug_tools.run_kubectl_top_nodes().await,
+                    DebugTool::KubectlClusterInfo => debug_tools.run_kubectl_cluster_info().await,
+                    DebugTool::KubectlGetPv => debug_tools.run_kubectl_get_pv().await,
+                    DebugTool::KubectlGetPvc => debug_tools.run_kubectl_get_pvc(namespace.as_deref()).await,
+                    DebugTool::KubeletStatus => debug_tools.run_kubelet_status().await,
+                    DebugTool::KubeletLogs => debug_tools.run_kubelet_logs(lines).await,
+                    DebugTool::KubeletConfig => debug_tools.run_kubelet_config().await,
+                    DebugTool::EtcdClusterHealth => debug_tools.run_etcd_cluster_health().await,
+                    DebugTool::EtcdMemberList => debug_tools.run_etcd_member_list().await,
+                    DebugTool::EtcdEndpointHealth => debug_tools.run_etcd_endpoint_health().await,
+                    DebugTool::EtcdEndpointStatus => debug_tools.run_etcd_endpoint_status().await,
                 };
 
                 tool_results.push(result.clone());
@@ -1973,6 +2124,21 @@ AVAILABLE TOOLS:
 - needs_reboot: Check if reboot needed (kernel updates)
 - pacman_mirrorlist: Show active pacman mirrors
 - aur_helper_info: Show AUR helper information
+- kubectl_get_deployments [--namespace <ns>]: Get deployments in namespace
+- kubectl_get_configmaps [--namespace <ns>]: Get ConfigMaps in namespace
+- kubectl_logs <pod_name> [--namespace <ns>] [--lines <n>]: Get pod logs
+- kubectl_top_pods [--namespace <ns>]: Get resource usage (top pods)
+- kubectl_top_nodes: Get resource usage (top nodes)
+- kubectl_cluster_info: Get cluster information
+- kubectl_get_pv: Get persistent volumes
+- kubectl_get_pvc [--namespace <ns>]: Get persistent volume claims
+- kubelet_status: Get kubelet service status
+- kubelet_logs [--lines <n>]: Get kubelet logs
+- kubelet_config: Get kubelet configuration
+- etcd_cluster_health: Check etcd cluster health
+- etcd_member_list: Get etcd member list
+- etcd_endpoint_health: Check etcd endpoint health
+- etcd_endpoint_status: Get etcd endpoint status and database size
 "#;
 
     let tool_history = if tool_results.is_empty() {
@@ -2072,6 +2238,22 @@ fn parse_ai_response(response: &str) -> AIAgentAction {
                 "needs_reboot" => DebugTool::NeedsReboot,
                 "pacman_mirrorlist" => DebugTool::PacmanMirrorlist,
                 "aur_helper_info" => DebugTool::AurHelperInfo,
+                // Kubernetes specific tools
+                "kubectl_get_deployments" => DebugTool::KubectlGetDeployments,
+                "kubectl_get_configmaps" => DebugTool::KubectlGetConfigmaps,
+                "kubectl_logs" => DebugTool::KubectlLogs,
+                "kubectl_top_pods" => DebugTool::KubectlTopPods,
+                "kubectl_top_nodes" => DebugTool::KubectlTopNodes,
+                "kubectl_cluster_info" => DebugTool::KubectlClusterInfo,
+                "kubectl_get_pv" => DebugTool::KubectlGetPv,
+                "kubectl_get_pvc" => DebugTool::KubectlGetPvc,
+                "kubelet_status" => DebugTool::KubeletStatus,
+                "kubelet_logs" => DebugTool::KubeletLogs,
+                "kubelet_config" => DebugTool::KubeletConfig,
+                "etcd_cluster_health" => DebugTool::EtcdClusterHealth,
+                "etcd_member_list" => DebugTool::EtcdMemberList,
+                "etcd_endpoint_health" => DebugTool::EtcdEndpointHealth,
+                "etcd_endpoint_status" => DebugTool::EtcdEndpointStatus,
                 _ => {
                     println!("Unknown tool: {}", tool_name);
                     return AIAgentAction::ProvideAnalysis {

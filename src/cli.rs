@@ -257,6 +257,36 @@ pub enum DebugTool {
     PacmanMirrorlist,
     /// [Arch] Show AUR helper information
     AurHelperInfo,
+    /// [K8s] Get deployments in namespace
+    KubectlGetDeployments,
+    /// [K8s] Get ConfigMaps in namespace  
+    KubectlGetConfigmaps,
+    /// [K8s] Get pod logs
+    KubectlLogs,
+    /// [K8s] Get resource usage (top pods)
+    KubectlTopPods,
+    /// [K8s] Get resource usage (top nodes)
+    KubectlTopNodes,
+    /// [K8s] Get cluster information
+    KubectlClusterInfo,
+    /// [K8s] Get persistent volumes
+    KubectlGetPv,
+    /// [K8s] Get persistent volume claims
+    KubectlGetPvc,
+    /// [K8s] Get kubelet service status
+    KubeletStatus,
+    /// [K8s] Get kubelet logs
+    KubeletLogs,
+    /// [K8s] Get kubelet configuration
+    KubeletConfig,
+    /// [K8s] Check etcd cluster health
+    EtcdClusterHealth,
+    /// [K8s] Get etcd member list
+    EtcdMemberList,
+    /// [K8s] Check etcd endpoint health
+    EtcdEndpointHealth,
+    /// [K8s] Get etcd endpoint status and database size
+    EtcdEndpointStatus,
 }
 
 #[derive(Debug, Clone)]
