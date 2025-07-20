@@ -229,6 +229,34 @@ pub enum DebugTool {
     CatProcSelfStatus,
     /// List namespace files for current process
     CatProcSelfNs,
+    /// [Arch] List all installed packages
+    PacmanListPackages,
+    /// [Arch] List orphaned packages
+    PacmanOrphans,
+    /// [Arch] Check package file integrity
+    PacmanCheckFiles,
+    /// [Arch] Check for available updates
+    Checkupdates,
+    /// [Arch] Show package cache information
+    PaccacheInfo,
+    /// [Arch] Analyze boot time
+    SystemdAnalyzeTime,
+    /// [Arch] Show boot critical chain
+    SystemdAnalyzeCriticalChain,
+    /// [Arch] Show boot blame (slowest services)
+    SystemdAnalyzeBlame,
+    /// [Arch] List all boot sessions
+    JournalctlListBoots,
+    /// [Arch] List loaded kernel modules
+    Lsmod,
+    /// [Arch] Show failed systemd units
+    SystemctlFailed,
+    /// [Arch] Check if reboot needed (kernel updates)
+    NeedsReboot,
+    /// [Arch] Show active pacman mirrors
+    PacmanMirrorlist,
+    /// [Arch] Show AUR helper information
+    AurHelperInfo,
 }
 
 #[derive(Debug, Clone)]

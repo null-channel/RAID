@@ -1286,6 +1286,63 @@ async fn run_debug_tools(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
                 let result = debug_tools.run_cat_proc_self_ns().await;
                 print_debug_result(&result);
             }
+            // Arch Linux specific debugging tools
+            DebugTool::PacmanListPackages => {
+                let result = debug_tools.run_pacman_list_packages().await;
+                print_debug_result(&result);
+            }
+            DebugTool::PacmanOrphans => {
+                let result = debug_tools.run_pacman_orphans().await;
+                print_debug_result(&result);
+            }
+            DebugTool::PacmanCheckFiles => {
+                let result = debug_tools.run_pacman_check_files().await;
+                print_debug_result(&result);
+            }
+            DebugTool::Checkupdates => {
+                let result = debug_tools.run_checkupdates().await;
+                print_debug_result(&result);
+            }
+            DebugTool::PaccacheInfo => {
+                let result = debug_tools.run_paccache_info().await;
+                print_debug_result(&result);
+            }
+            DebugTool::SystemdAnalyzeTime => {
+                let result = debug_tools.run_systemd_analyze_time().await;
+                print_debug_result(&result);
+            }
+            DebugTool::SystemdAnalyzeCriticalChain => {
+                let result = debug_tools.run_systemd_analyze_critical_chain().await;
+                print_debug_result(&result);
+            }
+            DebugTool::SystemdAnalyzeBlame => {
+                let result = debug_tools.run_systemd_analyze_blame().await;
+                print_debug_result(&result);
+            }
+            DebugTool::JournalctlListBoots => {
+                let result = debug_tools.run_journalctl_list_boots().await;
+                print_debug_result(&result);
+            }
+            DebugTool::Lsmod => {
+                let result = debug_tools.run_lsmod().await;
+                print_debug_result(&result);
+            }
+            DebugTool::SystemctlFailed => {
+                let result = debug_tools.run_systemctl_failed().await;
+                print_debug_result(&result);
+            }
+            DebugTool::NeedsReboot => {
+                let result = debug_tools.run_needs_reboot().await;
+                print_debug_result(&result);
+            }
+            DebugTool::PacmanMirrorlist => {
+                let result = debug_tools.run_pacman_mirrorlist().await;
+                print_debug_result(&result);
+            }
+            DebugTool::AurHelperInfo => {
+                let result = debug_tools.run_aur_helper_info().await;
+                print_debug_result(&result);
+            }
         },
         _ => {
             println!("Error: Debug command not found");
@@ -1413,6 +1470,22 @@ SECURITY TOOLS:
 - last: Show login history
 - ps_ef: Show all processes with full info
 - lsof: Show open files and network connections
+
+ARCH LINUX TOOLS:
+- pacman_list_packages: List all installed packages
+- pacman_orphans: List orphaned packages (no longer needed dependencies)
+- pacman_check_files: Check package file integrity
+- checkupdates: Check for available updates
+- paccache_info: Show package cache information
+- systemd_analyze_time: Analyze boot time and performance
+- systemd_analyze_critical_chain: Show boot critical chain
+- systemd_analyze_blame: Show boot blame (slowest services)
+- journalctl_list_boots: List all boot sessions
+- lsmod: List loaded kernel modules
+- systemctl_failed: Show failed systemd units
+- needs_reboot: Check if reboot needed (kernel updates)
+- pacman_mirrorlist: Show active pacman mirrors
+- aur_helper_info: Show AUR helper information
 "#;
 
     // First, ask the AI which tools it wants to run
@@ -1556,6 +1629,21 @@ Select 2-5 most relevant tools based on the question."#,
             "free" => debug_tools.run_free().await,
             "netstat" => debug_tools.run_netstat().await,
             "df" => debug_tools.run_df().await,
+            // Arch Linux specific tools
+            "pacman_list_packages" => debug_tools.run_pacman_list_packages().await,
+            "pacman_orphans" => debug_tools.run_pacman_orphans().await,
+            "pacman_check_files" => debug_tools.run_pacman_check_files().await,
+            "checkupdates" => debug_tools.run_checkupdates().await,
+            "paccache_info" => debug_tools.run_paccache_info().await,
+            "systemd_analyze_time" => debug_tools.run_systemd_analyze_time().await,
+            "systemd_analyze_critical_chain" => debug_tools.run_systemd_analyze_critical_chain().await,
+            "systemd_analyze_blame" => debug_tools.run_systemd_analyze_blame().await,
+            "journalctl_list_boots" => debug_tools.run_journalctl_list_boots().await,
+            "lsmod" => debug_tools.run_lsmod().await,
+            "systemctl_failed" => debug_tools.run_systemctl_failed().await,
+            "needs_reboot" => debug_tools.run_needs_reboot().await,
+            "pacman_mirrorlist" => debug_tools.run_pacman_mirrorlist().await,
+            "aur_helper_info" => debug_tools.run_aur_helper_info().await,
             _ => {
                 println!("⚠️  Unknown tool: {}", tool_name);
                 continue;
@@ -1779,6 +1867,21 @@ async fn run_ai_agent(
                     DebugTool::Lsns => debug_tools.run_lsns().await,
                     DebugTool::CatProcSelfStatus => debug_tools.run_cat_proc_self_status().await,
                     DebugTool::CatProcSelfNs => debug_tools.run_cat_proc_self_ns().await,
+                    // Arch Linux specific debugging tools
+                    DebugTool::PacmanListPackages => debug_tools.run_pacman_list_packages().await,
+                    DebugTool::PacmanOrphans => debug_tools.run_pacman_orphans().await,
+                    DebugTool::PacmanCheckFiles => debug_tools.run_pacman_check_files().await,
+                    DebugTool::Checkupdates => debug_tools.run_checkupdates().await,
+                    DebugTool::PaccacheInfo => debug_tools.run_paccache_info().await,
+                    DebugTool::SystemdAnalyzeTime => debug_tools.run_systemd_analyze_time().await,
+                    DebugTool::SystemdAnalyzeCriticalChain => debug_tools.run_systemd_analyze_critical_chain().await,
+                    DebugTool::SystemdAnalyzeBlame => debug_tools.run_systemd_analyze_blame().await,
+                    DebugTool::JournalctlListBoots => debug_tools.run_journalctl_list_boots().await,
+                    DebugTool::Lsmod => debug_tools.run_lsmod().await,
+                    DebugTool::SystemctlFailed => debug_tools.run_systemctl_failed().await,
+                    DebugTool::NeedsReboot => debug_tools.run_needs_reboot().await,
+                    DebugTool::PacmanMirrorlist => debug_tools.run_pacman_mirrorlist().await,
+                    DebugTool::AurHelperInfo => debug_tools.run_aur_helper_info().await,
                 };
 
                 tool_results.push(result.clone());
@@ -1856,6 +1959,20 @@ AVAILABLE TOOLS:
 - lsns: List all namespaces on the system
 - cat_proc_self_status: Get current process status information
 - cat_proc_self_ns: List namespace files for current process
+- pacman_list_packages: List all installed packages  
+- pacman_orphans: List orphaned packages
+- pacman_check_files: Check package file integrity
+- checkupdates: Check for available updates
+- paccache_info: Show package cache information
+- systemd_analyze_time: Analyze boot time and performance
+- systemd_analyze_critical_chain: Show boot critical chain
+- systemd_analyze_blame: Show boot blame (slowest services)
+- journalctl_list_boots: List all boot sessions
+- lsmod: List loaded kernel modules
+- systemctl_failed: Show failed systemd units
+- needs_reboot: Check if reboot needed (kernel updates)
+- pacman_mirrorlist: Show active pacman mirrors
+- aur_helper_info: Show AUR helper information
 "#;
 
     let tool_history = if tool_results.is_empty() {
@@ -1940,6 +2057,21 @@ fn parse_ai_response(response: &str) -> AIAgentAction {
                 "netstat" => DebugTool::Netstat,
                 "df" => DebugTool::Df,
                 "free" => DebugTool::Free,
+                // Arch Linux specific tools
+                "pacman_list_packages" => DebugTool::PacmanListPackages,
+                "pacman_orphans" => DebugTool::PacmanOrphans,
+                "pacman_check_files" => DebugTool::PacmanCheckFiles,
+                "checkupdates" => DebugTool::Checkupdates,
+                "paccache_info" => DebugTool::PaccacheInfo,
+                "systemd_analyze_time" => DebugTool::SystemdAnalyzeTime,
+                "systemd_analyze_critical_chain" => DebugTool::SystemdAnalyzeCriticalChain,
+                "systemd_analyze_blame" => DebugTool::SystemdAnalyzeBlame,
+                "journalctl_list_boots" => DebugTool::JournalctlListBoots,
+                "lsmod" => DebugTool::Lsmod,
+                "systemctl_failed" => DebugTool::SystemctlFailed,
+                "needs_reboot" => DebugTool::NeedsReboot,
+                "pacman_mirrorlist" => DebugTool::PacmanMirrorlist,
+                "aur_helper_info" => DebugTool::AurHelperInfo,
                 _ => {
                     println!("Unknown tool: {}", tool_name);
                     return AIAgentAction::ProvideAnalysis {
