@@ -287,6 +287,42 @@ pub enum DebugTool {
     EtcdEndpointHealth,
     /// [K8s] Get etcd endpoint status and database size
     EtcdEndpointStatus,
+    /// [Network] Show IP addresses and network interfaces
+    IpAddr,
+    /// [Network] Show routing table
+    IpRoute,
+    /// [Network] Show socket statistics and listening ports
+    Ss,
+    /// [Network] Test network connectivity with ping
+    Ping,
+    /// [Network] Trace network route to destination
+    Traceroute,
+    /// [Network] Perform DNS lookup
+    Dig,
+    /// [Network] Show firewall rules (iptables)
+    Iptables,
+    /// [Network] Show ethernet interface statistics
+    Ethtool,
+    /// [Network] Show network connections and routing tables (deprecated netstat alternative)
+    NetstatLegacy,
+    /// [Network] Show ARP table
+    ArpTable,
+    /// [Network] Show network interface statistics
+    InterfaceStats,
+    /// [Network] Test bandwidth between hosts
+    Iperf3,
+    /// [Network] Show network namespaces
+    NetworkNamespaces,
+    /// [Network] Monitor network traffic
+    TcpdumpSample,
+    /// [Network] Show bridge information
+    BridgeInfo,
+    /// [Network] Show wireless interface information
+    WirelessInfo,
+    /// [Network] Show firewall rules (nftables)
+    Nftables,
+    /// [Network] Test DNS resolution speed
+    DnsTest,
 }
 
 #[derive(Debug, Clone)]

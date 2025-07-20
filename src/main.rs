@@ -1408,6 +1408,83 @@ async fn run_debug_tools(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
                 let result = debug_tools.run_etcd_endpoint_status().await;
                 print_debug_result(&result);
             }
+            // Network debugging tools
+            DebugTool::IpAddr => {
+                let result = debug_tools.run_ip_addr().await;
+                print_debug_result(&result);
+            }
+            DebugTool::IpRoute => {
+                let result = debug_tools.run_ip_route().await;
+                print_debug_result(&result);
+            }
+            DebugTool::Ss => {
+                let result = debug_tools.run_ss().await;
+                print_debug_result(&result);
+            }
+            DebugTool::Ping => {
+                // Default to google.com, users can specify different host via question answering mode
+                let result = debug_tools.run_ping("8.8.8.8").await;
+                print_debug_result(&result);
+            }
+            DebugTool::Traceroute => {
+                // Default to google.com, users can specify different host via question answering mode
+                let result = debug_tools.run_traceroute("8.8.8.8").await;
+                print_debug_result(&result);
+            }
+            DebugTool::Dig => {
+                // Default to google.com, users can specify different domain via question answering mode
+                let result = debug_tools.run_dig("google.com").await;
+                print_debug_result(&result);
+            }
+            DebugTool::Iptables => {
+                let result = debug_tools.run_iptables().await;
+                print_debug_result(&result);
+            }
+            DebugTool::Ethtool => {
+                // Default to eth0, users can specify different interface via question answering mode
+                let result = debug_tools.run_ethtool("eth0").await;
+                print_debug_result(&result);
+            }
+            DebugTool::NetstatLegacy => {
+                let result = debug_tools.run_netstat_legacy().await;
+                print_debug_result(&result);
+            }
+            DebugTool::ArpTable => {
+                let result = debug_tools.run_arp_table().await;
+                print_debug_result(&result);
+            }
+            DebugTool::InterfaceStats => {
+                let result = debug_tools.run_interface_stats().await;
+                print_debug_result(&result);
+            }
+            DebugTool::Iperf3 => {
+                let result = debug_tools.run_iperf3_server_check().await;
+                print_debug_result(&result);
+            }
+            DebugTool::NetworkNamespaces => {
+                let result = debug_tools.run_network_namespaces().await;
+                print_debug_result(&result);
+            }
+            DebugTool::TcpdumpSample => {
+                let result = debug_tools.run_tcpdump_sample(None).await;
+                print_debug_result(&result);
+            }
+            DebugTool::BridgeInfo => {
+                let result = debug_tools.run_bridge_info().await;
+                print_debug_result(&result);
+            }
+            DebugTool::WirelessInfo => {
+                let result = debug_tools.run_wireless_info().await;
+                print_debug_result(&result);
+            }
+            DebugTool::Nftables => {
+                let result = debug_tools.run_nftables().await;
+                print_debug_result(&result);
+            }
+            DebugTool::DnsTest => {
+                let result = debug_tools.run_dns_test("google.com").await;
+                print_debug_result(&result);
+            }
         },
         _ => {
             println!("Error: Debug command not found");
@@ -1509,13 +1586,24 @@ PROCESS & PERFORMANCE:
 - pidstat: Process statistics
 
 NETWORK DIAGNOSTICS:
-- netstat: Show network connections
-- ss: Show socket statistics
-- ip_addr: Show network interfaces
+- ss: Show socket statistics and listening ports (modern netstat replacement)
+- ip_addr: Show network interfaces and IP addresses
 - ip_route: Show routing table
 - ping <host>: Test network connectivity
+- traceroute <host>: Trace network route to destination
 - dig <domain>: DNS lookup
-- iptables: Show firewall rules
+- dns_test <domain>: Test DNS resolution speed across multiple servers
+- iptables: Show firewall rules (iptables)
+- nftables: Show firewall rules (nftables)
+- ethtool <interface>: Show ethernet interface statistics
+- arp_table: Show ARP neighbor table
+- interface_stats: Show network interface statistics from /proc/net/dev
+- bridge_info: Show bridge interfaces
+- wireless_info: Show wireless interface information
+- network_namespaces: Show network namespaces
+- tcpdump_sample [interface]: Monitor network traffic (sample)
+- iperf3: Show iperf3 availability for bandwidth testing
+- netstat_legacy: Legacy netstat command (if available)
 
 STORAGE DIAGNOSTICS:
 - df: Show disk usage
@@ -1766,6 +1854,43 @@ Select 2-5 most relevant tools based on the question."#,
             "etcd_member_list" => debug_tools.run_etcd_member_list().await,
             "etcd_endpoint_health" => debug_tools.run_etcd_endpoint_health().await,
             "etcd_endpoint_status" => debug_tools.run_etcd_endpoint_status().await,
+            // Network tools
+            "ip_addr" => debug_tools.run_ip_addr().await,
+            "ip_route" => debug_tools.run_ip_route().await,
+            "ss" => debug_tools.run_ss().await,
+            "ping" => {
+                let host = parts.get(1).unwrap_or(&"8.8.8.8").to_string();
+                debug_tools.run_ping(&host).await
+            }
+            "traceroute" => {
+                let host = parts.get(1).unwrap_or(&"8.8.8.8").to_string();
+                debug_tools.run_traceroute(&host).await
+            }
+            "dig" => {
+                let domain = parts.get(1).unwrap_or(&"google.com").to_string();
+                debug_tools.run_dig(&domain).await
+            }
+            "iptables" => debug_tools.run_iptables().await,
+            "ethtool" => {
+                let interface = parts.get(1).unwrap_or(&"eth0").to_string();
+                debug_tools.run_ethtool(&interface).await
+            }
+            "netstat_legacy" => debug_tools.run_netstat_legacy().await,
+            "arp_table" => debug_tools.run_arp_table().await,
+            "interface_stats" => debug_tools.run_interface_stats().await,
+            "iperf3" => debug_tools.run_iperf3_server_check().await,
+            "network_namespaces" => debug_tools.run_network_namespaces().await,
+            "tcpdump_sample" => {
+                let interface = parts.get(1).map(|s| *s);
+                debug_tools.run_tcpdump_sample(interface).await
+            }
+            "bridge_info" => debug_tools.run_bridge_info().await,
+            "wireless_info" => debug_tools.run_wireless_info().await,
+            "nftables" => debug_tools.run_nftables().await,
+            "dns_test" => {
+                let domain = parts.get(1).unwrap_or(&"google.com").to_string();
+                debug_tools.run_dns_test(&domain).await
+            }
             _ => {
                 println!("⚠️  Unknown tool: {}", tool_name);
                 continue;
@@ -2033,6 +2158,25 @@ async fn run_ai_agent(
                     DebugTool::EtcdMemberList => debug_tools.run_etcd_member_list().await,
                     DebugTool::EtcdEndpointHealth => debug_tools.run_etcd_endpoint_health().await,
                     DebugTool::EtcdEndpointStatus => debug_tools.run_etcd_endpoint_status().await,
+                    // Network debugging tools
+                    DebugTool::IpAddr => debug_tools.run_ip_addr().await,
+                    DebugTool::IpRoute => debug_tools.run_ip_route().await,
+                    DebugTool::Ss => debug_tools.run_ss().await,
+                    DebugTool::Ping => debug_tools.run_ping("8.8.8.8").await,
+                    DebugTool::Traceroute => debug_tools.run_traceroute("8.8.8.8").await,
+                    DebugTool::Dig => debug_tools.run_dig("google.com").await,
+                    DebugTool::Iptables => debug_tools.run_iptables().await,
+                    DebugTool::Ethtool => debug_tools.run_ethtool("eth0").await,
+                    DebugTool::NetstatLegacy => debug_tools.run_netstat_legacy().await,
+                    DebugTool::ArpTable => debug_tools.run_arp_table().await,
+                    DebugTool::InterfaceStats => debug_tools.run_interface_stats().await,
+                    DebugTool::Iperf3 => debug_tools.run_iperf3_server_check().await,
+                    DebugTool::NetworkNamespaces => debug_tools.run_network_namespaces().await,
+                    DebugTool::TcpdumpSample => debug_tools.run_tcpdump_sample(None).await,
+                    DebugTool::BridgeInfo => debug_tools.run_bridge_info().await,
+                    DebugTool::WirelessInfo => debug_tools.run_wireless_info().await,
+                    DebugTool::Nftables => debug_tools.run_nftables().await,
+                    DebugTool::DnsTest => debug_tools.run_dns_test("google.com").await,
                 };
 
                 tool_results.push(result.clone());
@@ -2254,6 +2398,25 @@ fn parse_ai_response(response: &str) -> AIAgentAction {
                 "etcd_member_list" => DebugTool::EtcdMemberList,
                 "etcd_endpoint_health" => DebugTool::EtcdEndpointHealth,
                 "etcd_endpoint_status" => DebugTool::EtcdEndpointStatus,
+                // Network tools
+                "ip_addr" => DebugTool::IpAddr,
+                "ip_route" => DebugTool::IpRoute,
+                "ss" => DebugTool::Ss,
+                "ping" => DebugTool::Ping,
+                "traceroute" => DebugTool::Traceroute,
+                "dig" => DebugTool::Dig,
+                "iptables" => DebugTool::Iptables,
+                "ethtool" => DebugTool::Ethtool,
+                "netstat_legacy" => DebugTool::NetstatLegacy,
+                "arp_table" => DebugTool::ArpTable,
+                "interface_stats" => DebugTool::InterfaceStats,
+                "iperf3" => DebugTool::Iperf3,
+                "network_namespaces" => DebugTool::NetworkNamespaces,
+                "tcpdump_sample" => DebugTool::TcpdumpSample,
+                "bridge_info" => DebugTool::BridgeInfo,
+                "wireless_info" => DebugTool::WirelessInfo,
+                "nftables" => DebugTool::Nftables,
+                "dns_test" => DebugTool::DnsTest,
                 _ => {
                     println!("Unknown tool: {}", tool_name);
                     return AIAgentAction::ProvideAnalysis {
