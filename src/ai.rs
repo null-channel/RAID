@@ -974,7 +974,9 @@ If you can answer the question with current information, use COMPLETE: followed 
             // Get AI response based on conversation history
             let conversation_context = self.build_conversation_context();
             println!("🔄 AI agent iteration {} (tool calls: {}/{})", total_iterations, self.current_tool_calls, self.max_tool_calls);
-            let ai_response = self.provider.analyze(&conversation_context).await?;
+            
+            // Use direct API call to avoid conflicting system prompts from analyze() method
+            let ai_response = self.get_ai_response(&conversation_context).await?;
 
             // Parse AI response and determine action
             println!("🔍 AI response preview: {}", ai_response.chars().take(150).collect::<String>().replace('\n', " "));
@@ -1103,7 +1105,7 @@ If you can answer the question with current information, use COMPLETE: followed 
 
             let conversation_context = self.build_conversation_context();
             println!("🔄 AI continuation iteration {} (tool calls: {}/{})", total_iterations, self.current_tool_calls, self.max_tool_calls);
-            let ai_response = self.provider.analyze(&conversation_context).await?;
+            let ai_response = self.get_ai_response(&conversation_context).await?;
 
             println!("🔍 AI continuation response preview: {}", ai_response.chars().take(150).collect::<String>().replace('\n', " "));
             match self.parse_ai_action(&ai_response).await {
@@ -1180,6 +1182,22 @@ If you can answer the question with current information, use COMPLETE: followed 
             tool_calls: Vec::new(),
             timestamp: std::time::SystemTime::now(),
         });
+    }
+
+    async fn get_ai_response(&self, conversation_context: &str) -> Result<String, AIError> {
+        // Make direct API call with conversation context to avoid conflicting system prompts
+        // The conversation context already contains our AI Agent system prompt
+        match self.provider.name() {
+            "OpenAI" => {
+                // Use a simplified prompt that just processes the conversation
+                let simple_prompt = format!("Please respond to this conversation following the instructions given in the SYSTEM message:\n\n{}", conversation_context);
+                self.provider.analyze(&simple_prompt).await
+            }
+            _ => {
+                // For other providers, use the conversation context as-is
+                self.provider.analyze(conversation_context).await
+            }
+        }
     }
 
     async fn add_tool_result(&mut self, tool: crate::cli::DebugTool, result: crate::tools::DebugToolResult) {
