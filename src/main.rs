@@ -96,74 +96,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     let check_component = cli.get_check_component();
 
-    if cli.dry_run {
-        // Dry run mode - skip AI analysis
-        match check_component {
-            CheckComponent::All => {
-                print_output_with_config(
-                    &sys_info,
-                    "Dry run mode - no AI analysis available",
-                    &config,
-                    &ui_formatter,
-                );
-            }
-            CheckComponent::System => {
-                print_output(
-                    &sys_info,
-                    "Dry run mode - no AI analysis available",
-                    &cli.output_format,
-                    cli.verbose,
-                );
-            }
-            CheckComponent::Containers => {
-                print_output(
-                    &sys_info,
-                    "Dry run mode - no AI analysis available",
-                    &cli.output_format,
-                    cli.verbose,
-                );
-            }
-            CheckComponent::Kubernetes => {
-                print_output(
-                    &sys_info,
-                    "Dry run mode - no AI analysis available",
-                    &cli.output_format,
-                    cli.verbose,
-                );
-            }
-            CheckComponent::Cgroups => {
-                print_output(
-                    &sys_info,
-                    "Dry run mode - no AI analysis available",
-                    &cli.output_format,
-                    cli.verbose,
-                );
-            }
-            CheckComponent::Systemd => {
-                print_output(
-                    &sys_info,
-                    "Dry run mode - no AI analysis available",
-                    &cli.output_format,
-                    cli.verbose,
-                );
-            }
-            CheckComponent::Journal => {
-                print_output(
-                    &sys_info,
-                    "Dry run mode - no AI analysis available",
-                    &cli.output_format,
-                    cli.verbose,
-                );
-            }
-            CheckComponent::Debug => {
-                println!(
-                    "Debug tools are not available in dry-run mode. Use normal mode to run debug tools."
-                );
-            }
-        }
-    } else {
-        // Normal mode with AI analysis
-        let ai_provider = if config.ui.progress_indicators && !cli.no_progress {
+    // Handle Debug tools in dry-run mode - other components use unified AI analysis
+    if cli.dry_run && matches!(check_component, CheckComponent::Debug) {
+        println!(
+            "Debug tools are not available in dry-run mode. Use normal mode to run debug tools."
+        );
+        return Ok(());
+    }
+
+    // For non-debug components, use unified AI analysis (it handles dry-run gracefully)
+    let ai_provider = if config.ui.progress_indicators && !cli.no_progress {
             ui_formatter.show_progress("Initializing AI provider", || async {
                 create_ai_provider_from_cli(
                     &config.get_ai_provider(),
@@ -185,121 +127,89 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ).await?
         };
 
-        match check_component {
-            CheckComponent::All => {
-                let analysis = if config.ui.progress_indicators && !cli.no_progress {
-                    ui_formatter.show_progress("Analyzing system with AI", || async {
-                        ai_provider
-                            .analyze_with_known_issues(
-                                &format!("OS: {}, CPU: {}", sys_info.os, sys_info.cpu),
-                                None,
-                            )
-                            .await
-                    }).await?
-                } else {
-                    ai_provider
-                        .analyze_with_known_issues(
-                            &format!("OS: {}, CPU: {}", sys_info.os, sys_info.cpu),
-                            None,
-                        )
-                        .await?
-                };
-
-                // Only store in database for full checks
-                if cli.is_full_check() {
-                    let db = if config.ui.progress_indicators && !cli.no_progress {
-                        ui_formatter.show_progress("Storing results in database", || {
-                            Database::new(&config.database.path)
-                        })?
-                    } else {
-                        Database::new(&config.database.path)?
-                    };
-                    
-                    if config.ui.progress_indicators && !cli.no_progress {
-                        ui_formatter.show_progress("Saving check results", || {
-                            db.store_check(&sys_info, &analysis)
-                        })?;
-                    } else {
-                        db.store_check(&sys_info, &analysis)?;
-                    }
-                }
-
-                print_output_with_config(&sys_info, &analysis, &config, &ui_formatter);
-            }
-            CheckComponent::System => {
-                let analysis = ai_provider
-                    .analyze_with_known_issues(
-                        &format!("System check - OS: {}, CPU: {}", sys_info.os, sys_info.cpu),
-                        Some(IssueCategory::System),
-                    )
-                    .await?;
-                print_system_info(&sys_info, &analysis, cli.verbose);
-            }
-            CheckComponent::Containers => {
-                let analysis = ai_provider
-                    .analyze_with_known_issues(
-                        &format!(
-                            "Container check - Found {} containers",
-                            sys_info.containers.len()
-                        ),
-                        Some(IssueCategory::Container),
-                    )
-                    .await?;
-                print_container_info(&sys_info, &analysis, cli.verbose);
-            }
-            CheckComponent::Kubernetes => {
-                let analysis = ai_provider
-                    .analyze_with_known_issues(
-                        &format!(
-                            "Kubernetes check - Running in K8s: {}",
-                            sys_info.kubernetes.is_kubernetes
-                        ),
-                        Some(IssueCategory::Kubernetes),
-                    )
-                    .await?;
-                print_kubernetes_info(&sys_info, &analysis, cli.verbose);
-            }
-            CheckComponent::Cgroups => {
-                let analysis = ai_provider
-                    .analyze_with_known_issues(
-                        &format!(
-                            "Cgroup check - Version: {}, Path: {}",
-                            sys_info.cgroups.version, sys_info.cgroups.cgroup_path
-                        ),
-                        Some(IssueCategory::Cgroups),
-                    )
-                    .await?;
-                print_cgroup_info(&sys_info, &analysis, cli.verbose);
-            }
-            CheckComponent::Systemd => {
-                let analysis = ai_provider
-                    .analyze_with_known_issues(
-                        &format!(
-                            "Systemd check - Status: {}, Failed units: {}",
-                            sys_info.systemd.system_status,
-                            sys_info.systemd.failed_units.len()
-                        ),
-                        Some(IssueCategory::Systemd),
-                    )
-                    .await?;
-                print_systemd_info(&sys_info, &analysis, cli.verbose);
-            }
-            CheckComponent::Journal => {
-                let total_errors =
-                    sys_info.journal.recent_errors.len() + sys_info.journal.boot_errors.len();
-                let analysis = ai_provider
-                    .analyze_with_known_issues(
-                        &format!("Journal check - Total errors: {}", total_errors),
-                        Some(IssueCategory::Journal),
-                    )
-                    .await?;
-                print_journal_info(&sys_info, &analysis, cli.verbose);
-            }
-            CheckComponent::Debug => {
-                println!(
-                    "Debug tools are not available in dry-run mode. Use normal mode to run debug tools."
-                );
-            }
+    match check_component {
+        CheckComponent::All => {
+            // Use the unified AI interaction system for comprehensive system health analysis
+            return run_unified_ai_analysis(
+                &config,
+                "comprehensive system health check",
+                &ui_formatter,
+                AnalysisType::SystemCheck,
+            ).await;
+        }
+        CheckComponent::System => {
+            let analysis = ai_provider
+                .analyze_with_known_issues(
+                    &format!("System check - OS: {}, CPU: {}", sys_info.os, sys_info.cpu),
+                    Some(IssueCategory::System),
+                )
+                .await?;
+            print_system_info(&sys_info, &analysis, cli.verbose);
+        }
+        CheckComponent::Containers => {
+            let analysis = ai_provider
+                .analyze_with_known_issues(
+                    &format!(
+                        "Container check - Found {} containers",
+                        sys_info.containers.len()
+                    ),
+                    Some(IssueCategory::Container),
+                )
+                .await?;
+            print_container_info(&sys_info, &analysis, cli.verbose);
+        }
+        CheckComponent::Kubernetes => {
+            let analysis = ai_provider
+                .analyze_with_known_issues(
+                    &format!(
+                        "Kubernetes check - Running in K8s: {}",
+                        sys_info.kubernetes.is_kubernetes
+                    ),
+                    Some(IssueCategory::Kubernetes),
+                )
+                .await?;
+            print_kubernetes_info(&sys_info, &analysis, cli.verbose);
+        }
+        CheckComponent::Cgroups => {
+            let analysis = ai_provider
+                .analyze_with_known_issues(
+                    &format!(
+                        "Cgroup check - Version: {}, Path: {}",
+                        sys_info.cgroups.version, sys_info.cgroups.cgroup_path
+                    ),
+                    Some(IssueCategory::Cgroups),
+                )
+                .await?;
+            print_cgroup_info(&sys_info, &analysis, cli.verbose);
+        }
+        CheckComponent::Systemd => {
+            let analysis = ai_provider
+                .analyze_with_known_issues(
+                    &format!(
+                        "Systemd check - Status: {}, Failed units: {}",
+                        sys_info.systemd.system_status,
+                        sys_info.systemd.failed_units.len()
+                    ),
+                    Some(IssueCategory::Systemd),
+                )
+                .await?;
+            print_systemd_info(&sys_info, &analysis, cli.verbose);
+        }
+        CheckComponent::Journal => {
+            let total_errors =
+                sys_info.journal.recent_errors.len() + sys_info.journal.boot_errors.len();
+            let analysis = ai_provider
+                .analyze_with_known_issues(
+                    &format!("Journal check - Total errors: {}", total_errors),
+                    Some(IssueCategory::Journal),
+                )
+                .await?;
+            print_journal_info(&sys_info, &analysis, cli.verbose);
+        }
+        CheckComponent::Debug => {
+            println!(
+                "Debug tools are not available in dry-run mode. Use normal mode to run debug tools."
+            );
         }
     }
 
@@ -1118,58 +1028,13 @@ async fn run_question_answering_with_config(
     question: &str,
     ui_formatter: &UIFormatter,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let ai_provider = create_ai_provider_from_cli(
-        &config.get_ai_provider(),
-        config.ai.api_key.clone(),
-        Some(config.get_model()),
-        config.ai.base_url.clone(),
-        config.ai.max_tokens,
-        config.ai.temperature,
-    )
-    .await?;
-
-    println!("❓ Question: {}", question);
-    println!("🤖 AI Assistant ({})", ai_provider.name());
-    
-    // Collect basic system info with progress
-    let sys_info = ui_formatter.show_progress("Collecting system information", || {
-        collect_basic_system_info()
-    });
-
-    // Create comprehensive context about the system
-    let mut system_context = String::new();
-    system_context.push_str(&format!("Operating System: {}\n", sys_info.os));
-    system_context.push_str(&format!("CPU: {}\n", sys_info.cpu));
-    system_context.push_str(&format!(
-        "Memory: {}/{}\n",
-        sys_info.free_memory, sys_info.total_memory
-    ));
-    system_context.push_str(&format!(
-        "Disk: {}/{}\n",
-        sys_info.free_disk, sys_info.total_disk
-    ));
-
-    if sys_info.is_kubernetes {
-        system_context.push_str("Environment: Kubernetes cluster\n");
-    }
-
-    if sys_info.container_runtime_available {
-        system_context.push_str("Container Runtime: Available\n");
-    }
-
-    // Get AI analysis
-    let final_analysis = if config.ui.progress_indicators {
-        ui_formatter.show_progress("Getting AI analysis", || async {
-            ai_provider.answer_question(question, &system_context).await
-        }).await?
-    } else {
-        ai_provider.answer_question(question, &system_context).await?
-    };
-
-    println!("\n🤖 AI Analysis:");
-    println!("{}", final_analysis);
-
-    Ok(())
+    // Use the unified AI interaction system with question-focused prompting
+    run_unified_ai_analysis(
+        config,
+        question,
+        ui_formatter,
+        AnalysisType::Question,
+    ).await
 }
 
 async fn run_ai_agent_mode(
@@ -1272,7 +1137,7 @@ async fn run_ai_agent_mode(
             }
             AIAgentResult::LimitReached { partial_analysis, tool_calls_used } => {
                 println!("\n⚠️  Tool call limit reached after {} calls", tool_calls_used);
-                println!("Partial analysis: {}", partial_analysis);
+                println!("{}", partial_analysis);
                 
                 print!("\nContinue with {} more tool calls? (y/n): ", max_tool_calls);
                 std::io::Write::flush(&mut std::io::stdout())?;
@@ -1284,16 +1149,442 @@ async fn run_ai_agent_mode(
                     println!("Continuing with {} more tool calls...", max_tool_calls);
                     result = agent.continue_after_limit().await?;
                 } else {
-                    println!("Stopping analysis. Final state:");
-                    println!("{}", partial_analysis);
+                    println!("Analysis stopped by user.");
                     break;
                 }
             }
             AIAgentResult::Error { error, tool_calls_used } => {
-                println!("\n❌ AI Agent error after {} tool calls: {}", tool_calls_used, error);
+                println!("\n❌ AI Agent encountered an error after {} tool calls:", tool_calls_used);
+                println!("Error: {}", error);
                 break;
             }
         }
+    }
+
+    Ok(())
+}
+
+/// Types of AI analysis to determine prompting strategy
+#[derive(Debug, Clone)]
+enum AnalysisType {
+    /// User asked a specific question - focus on answering it
+    Question,
+    /// System health check - comprehensive analysis
+    SystemCheck,
+}
+
+/// Unified AI interaction system that always uses tools but with different prompting strategies
+async fn run_unified_ai_analysis(
+    config: &RaidConfig,
+    user_input: &str,
+    ui_formatter: &UIFormatter,
+    analysis_type: AnalysisType,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let ai_provider = create_ai_provider_from_cli(
+        &config.get_ai_provider(),
+        config.ai.api_key.clone(),
+        Some(config.get_model()),
+        config.ai.base_url.clone(),
+        config.ai.max_tokens,
+        config.ai.temperature,
+    )
+    .await?;
+
+    // Different headers based on analysis type
+    match analysis_type {
+        AnalysisType::Question => {
+            println!("❓ Question: {}", user_input);
+            println!("🤖 AI Assistant ({})", ai_provider.name());
+            println!("Analyzing your question and determining which tools to run...\n");
+        }
+        AnalysisType::SystemCheck => {
+            println!("🔍 System Health Analysis");
+            println!("🤖 AI Assistant ({})", ai_provider.name());
+            println!("Performing comprehensive system analysis...\n");
+        }
+    }
+
+    // Collect basic system info with progress
+    let sys_info = ui_formatter.show_progress("Collecting system information", || {
+        collect_basic_system_info()
+    });
+
+    // Create comprehensive context about the system
+    let mut system_context = String::new();
+    system_context.push_str(&format!("Operating System: {}\n", sys_info.os));
+    system_context.push_str(&format!("CPU: {}\n", sys_info.cpu));
+    system_context.push_str(&format!(
+        "Memory: {}/{}\n",
+        sys_info.free_memory, sys_info.total_memory
+    ));
+    system_context.push_str(&format!(
+        "Disk: {}/{}\n",
+        sys_info.free_disk, sys_info.total_disk
+    ));
+
+    if sys_info.is_kubernetes {
+        system_context.push_str("Environment: Kubernetes cluster\n");
+    }
+
+    if sys_info.container_runtime_available {
+        system_context.push_str("Container Runtime: Available\n");
+    }
+
+    // Create a comprehensive list of available tools for the AI to choose from
+    let available_tools = r#"
+AVAILABLE DIAGNOSTIC TOOLS:
+
+NETWORK DIAGNOSTICS:
+- network_setup_check: Quick network setup verification for standard users
+- connectivity_test: Test connectivity to multiple standard hosts
+- ufw_status: Check UFW (Uncomplicated Firewall) status
+- networkmanager_status: Check NetworkManager service status
+- dns_config: Check DNS configuration (/etc/resolv.conf)
+- network_health_check: Comprehensive network diagnostic check (multiple tools)
+- ss: Show socket statistics and listening ports
+- ip_addr: Show network interfaces and IP addresses
+- ip_route: Show routing table
+- ping <host>: Test network connectivity
+- dig <domain>: DNS lookup
+- dns_test <domain>: Test DNS resolution speed across multiple servers
+
+SYSTEM SERVICES & STATUS:
+- systemctl_failed: Show failed systemd units
+- systemctl_status <service_name>: Get status of specific service
+- journalctl_recent [--lines <n>]: Get recent system logs
+- journalctl_errors [--lines <n>]: Get error logs only
+- systemd_analyze_time: Analyze boot time and performance
+
+PROCESS & PERFORMANCE:
+- ps_aux: List all running processes
+- free: Show memory usage
+- df: Show disk usage
+- top: Show current system processes and resource usage
+
+CONTAINER TOOLS:
+- docker_ps: List all Docker containers
+- docker_inspect <container_name>: Inspect specific container
+
+KUBERNETES TOOLS:
+- kubectl_get_pods [--namespace <ns>]: List all pods in namespace
+- kubectl_describe_pod <pod_name> [--namespace <ns>]: Get detailed pod information
+- kubectl_get_services [--namespace <ns>]: List all services in namespace
+- kubectl_get_nodes: List all cluster nodes
+- kubectl_get_events [--namespace <ns>]: Get recent cluster events
+
+STORAGE & SECURITY:
+- lsblk: List block devices
+- w: Show logged in users
+- last: Show login history
+"#;
+
+    // Create different prompts based on analysis type
+    let tool_selection_prompt = match analysis_type {
+        AnalysisType::Question => format!(
+            r#"You are an expert Linux systems administrator and Kubernetes operator. Your goal is to help diagnose and solve the user's problem by selecting the most appropriate diagnostic tools.
+
+QUESTION: {}
+
+SYSTEM CONTEXT:
+{}
+
+{}
+
+INSTRUCTIONS:
+1. Analyze the user's question carefully
+2. Based on the question and system context, select the most relevant diagnostic tools
+3. Consider what information you need to properly diagnose the issue
+4. List the tools you want to run, one per line, in the format: TOOL_NAME [arguments]
+
+RESPONSE FORMAT:
+Provide your tool selection as a simple list, one tool per line. For example:
+```
+network_setup_check
+connectivity_test
+ufw_status
+systemctl_status NetworkManager
+```
+
+Do NOT provide analysis yet - just select the tools you need to gather information.
+Select 2-5 most relevant tools based on the question."#,
+            user_input, system_context, available_tools
+        ),
+        AnalysisType::SystemCheck => format!(
+            r#"You are an expert Linux systems administrator performing a comprehensive system health check. Your goal is to select diagnostic tools that will give you a complete picture of the system's health and identify any potential issues.
+
+SYSTEM CONTEXT:
+{}
+
+{}
+
+INSTRUCTIONS:
+1. You are performing a thorough system health analysis
+2. Select tools that will check all major system components: networking, storage, services, processes, security
+3. Choose tools that are most likely to reveal issues or confirm system health
+4. Prioritize tools that provide the most comprehensive information
+5. List the tools you want to run, one per line, in the format: TOOL_NAME [arguments]
+
+RESPONSE FORMAT:
+Provide your tool selection as a simple list, one tool per line. For example:
+```
+systemctl_failed
+journalctl_errors --lines 50
+network_setup_check
+df
+free
+ps_aux
+ss
+```
+
+Do NOT provide analysis yet - just select the tools you need to perform a comprehensive health check.
+Select 5-8 tools that will give you the best overview of system health."#,
+            system_context, available_tools
+        ),
+    };
+
+    // Get AI's tool recommendations
+    let tool_recommendations = if config.ui.progress_indicators {
+        ui_formatter.show_progress("AI selecting diagnostic tools", || async {
+            ai_provider.answer_question("", &tool_selection_prompt).await
+        }).await?
+    } else {
+        ai_provider.answer_question("", &tool_selection_prompt).await?
+    };
+
+    println!("🔧 AI selected these diagnostic tools:");
+    println!("{}", tool_recommendations);
+    println!();
+
+    // Parse and execute the recommended tools (use the existing tool execution logic)
+    let debug_tools = DebugTools::new();
+    let mut tool_results = Vec::new();
+    let mut tools_used = Vec::new();
+
+    // Parse the AI's response to extract tool commands
+    for line in tool_recommendations.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with("```") || line.starts_with('#') {
+            continue;
+        }
+
+        // Remove any markdown bullets or numbers
+        let line = line.trim_start_matches("- ").trim_start_matches("* ");
+        let line = if let Some(pos) = line.find('.') {
+            if line.chars().take(pos).all(|c| c.is_ascii_digit()) {
+                &line[pos + 1..].trim()
+            } else {
+                line
+            }
+        } else {
+            line
+        };
+
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.is_empty() {
+            continue;
+        }
+
+        let tool_name = parts[0];
+
+        // Execute the tool using the existing tool execution logic from run_question_answering
+        let result = match tool_name {
+            "network_setup_check" => debug_tools.run_network_setup_check().await,
+            "connectivity_test" => debug_tools.run_connectivity_test().await,
+            "ufw_status" => debug_tools.run_ufw_status().await,
+            "networkmanager_status" => debug_tools.run_networkmanager_status().await,
+            "dns_config" => debug_tools.run_dns_config().await,
+            "network_health_check" => {
+                // For unified analysis, run the comprehensive check and combine results
+                let results = debug_tools.run_network_health_check().await;
+                let combined_output = results.iter()
+                    .map(|r| format!("{}: {}", r.tool_name, if r.success { "✅ SUCCESS" } else { "❌ FAILED" }))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                
+                tools::DebugToolResult {
+                    tool_name: "network_health_check".to_string(),
+                    command: "network_health_check (comprehensive)".to_string(),
+                    success: results.iter().all(|r| r.success),
+                    output: combined_output,
+                    error: None,
+                    execution_time_ms: results.iter().map(|r| r.execution_time_ms).sum(),
+                }
+            }
+            "systemctl_failed" => debug_tools.run_systemctl_failed().await,
+            "systemctl_status" => {
+                let service = parts.get(1).unwrap_or(&"NetworkManager").to_string();
+                debug_tools.run_systemctl_status(&service).await
+            }
+            "journalctl_recent" => {
+                let lines = extract_arg(&parts, "--lines")
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(50);
+                debug_tools.run_journalctl_recent(Some(lines)).await
+            }
+            "journalctl_errors" => {
+                let lines = extract_arg(&parts, "--lines")
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(50);
+                debug_tools.run_journalctl_errors(Some(lines)).await
+            }
+            "systemd_analyze_time" => debug_tools.run_systemd_analyze_time().await,
+            "ps_aux" => debug_tools.run_ps_aux().await,
+            "free" => debug_tools.run_free().await,
+            "df" => debug_tools.run_df().await,
+            "top" => debug_tools.run_top().await,
+            "docker_ps" => debug_tools.run_docker_ps().await,
+            "ss" => debug_tools.run_ss().await,
+            "ip_addr" => debug_tools.run_ip_addr().await,
+            "ip_route" => debug_tools.run_ip_route().await,
+            "ping" => {
+                let host = parts.get(1).unwrap_or(&"8.8.8.8").to_string();
+                debug_tools.run_ping(&host).await
+            }
+            "dig" => {
+                let domain = parts.get(1).unwrap_or(&"google.com").to_string();
+                debug_tools.run_dig(&domain).await
+            }
+            "dns_test" => {
+                let domain = parts.get(1).unwrap_or(&"google.com").to_string();
+                debug_tools.run_dns_test(&domain).await
+            }
+            "lsblk" => debug_tools.run_lsblk().await,
+            "w" => debug_tools.run_w().await,
+            "last" => debug_tools.run_last().await,
+            // Kubernetes tools
+            "kubectl_get_pods" => {
+                let namespace = extract_arg(&parts, "--namespace");
+                debug_tools.run_kubectl_get_pods(namespace.as_deref()).await
+            }
+            "kubectl_get_services" => {
+                let namespace = extract_arg(&parts, "--namespace");
+                debug_tools.run_kubectl_get_services(namespace.as_deref()).await
+            }
+            "kubectl_get_nodes" => debug_tools.run_kubectl_get_nodes().await,
+            "kubectl_get_events" => {
+                let namespace = extract_arg(&parts, "--namespace");
+                debug_tools.run_kubectl_get_events(namespace.as_deref()).await
+            }
+            _ => {
+                println!("⚠️  Unknown tool: {}", tool_name);
+                continue;
+            }
+        };
+
+        // Show the actual command that was executed so users can replicate it
+        println!("🔍 Running: {}", result.command);
+
+        tools_used.push(result.command.clone());
+
+        if result.success {
+            println!("✅ Tool completed successfully");
+            // Show brief output preview
+            let preview = result.output.lines().take(3).collect::<Vec<_>>().join("\n");
+            if !preview.trim().is_empty() {
+                println!("Preview: {}", preview);
+            }
+        } else {
+            println!(
+                "❌ Tool failed: {}",
+                result.error.clone().unwrap_or("Unknown error".to_string())
+            );
+        }
+        tool_results.push(result);
+        println!();
+    }
+
+    // Build comprehensive context with tool results for final analysis
+    let mut final_context = system_context;
+
+    if !tool_results.is_empty() {
+        final_context.push_str("\nDIAGNOSTIC TOOL RESULTS:\n");
+        for result in &tool_results {
+            final_context.push_str(&format!("=== {} ===\n", result.command));
+            final_context.push_str(&format!("Success: {}\n", result.success));
+            if result.success {
+                final_context.push_str(&format!("Output:\n{}\n\n", result.output));
+            } else if let Some(error) = &result.error {
+                final_context.push_str(&format!("Error: {}\n\n", error));
+            }
+        }
+    }
+
+    // Create different analysis prompts based on analysis type
+    let analysis_prompt = match analysis_type {
+        AnalysisType::Question => format!(
+            r#"You are an expert Linux systems administrator and Kubernetes operator. Based on the user's question and the diagnostic information gathered, provide a comprehensive analysis and solution.
+
+ORIGINAL QUESTION: {}
+
+DIAGNOSTIC INFORMATION:
+{}
+
+INSTRUCTIONS:
+1. Analyze the diagnostic information in the context of the user's question
+2. Identify any issues, problems, or relevant findings
+3. Provide clear explanations of what you found
+4. Offer specific, actionable solutions or next steps
+5. If everything looks normal, explain that clearly
+6. Be concise but thorough in your analysis
+
+Provide your analysis now:"#,
+            user_input, final_context
+        ),
+        AnalysisType::SystemCheck => format!(
+            r#"You are an expert Linux systems administrator performing a comprehensive system health analysis. Based on the diagnostic information gathered, provide a thorough assessment of the system's health.
+
+DIAGNOSTIC INFORMATION:
+{}
+
+INSTRUCTIONS:
+1. Analyze all the diagnostic information to assess overall system health
+2. Identify any critical issues, performance problems, or security concerns
+3. Highlight areas that are functioning well
+4. Provide specific, actionable recommendations for any issues found
+5. Prioritize findings by severity (Critical, Performance, Configuration, Minor)
+6. If the system appears healthy overall, clearly state that
+
+Format your analysis as:
+## System Health Summary
+[Overall assessment]
+
+## Critical Issues (if any)
+[List any critical problems that need immediate attention]
+
+## Performance Issues (if any)
+[List any performance-related concerns]
+
+## Configuration Issues (if any)
+[List any configuration improvements needed]
+
+## Recommendations
+[Specific actionable steps to improve the system]
+
+Provide your comprehensive system health analysis now:"#,
+            final_context
+        ),
+    };
+
+    // Get final AI analysis
+    let final_analysis = if config.ui.progress_indicators {
+        ui_formatter.show_progress("Getting AI analysis", || async {
+            ai_provider.answer_question("", &analysis_prompt).await
+        }).await?
+    } else {
+        ai_provider.answer_question("", &analysis_prompt).await?
+    };
+
+    println!("🤖 AI Analysis:");
+    println!("{}", final_analysis);
+
+    // Provide guidance on running commands manually
+    if !tools_used.is_empty() {
+        println!("\n📚 Commands used for this analysis:");
+        for command in &tools_used {
+            println!("  $ {}", command);
+        }
+        println!();
+        println!("💡 Tip: You can run any of these commands directly in your terminal!");
     }
 
     Ok(())
