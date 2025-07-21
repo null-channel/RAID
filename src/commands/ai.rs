@@ -18,13 +18,55 @@ pub async fn run_question_answering_with_config(
     question: &str,
     ui_formatter: &UIFormatter,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Use the unified AI interaction system with question-focused prompting
-    run_unified_ai_analysis(
-        config,
-        question,
-        ui_formatter,
-        AnalysisType::Question,
-    ).await
+    // Check if AI API key is available
+    if config.ai.api_key.is_none() {
+        println!("❌ No AI API key found. Question answering requires an AI provider.");
+        println!("Please set your AI_API_KEY environment variable or use --ai-api-key flag.");
+        println!("Supported providers: OpenAI, Anthropic, Local (Ollama)");
+        println!("\nFor a basic system check without AI, use: cargo run -- --dry-run");
+        return Ok(());
+    }
+
+    // Test AI provider connection before proceeding
+    let ai_provider = match create_ai_provider_from_cli(
+        &config.get_ai_provider(),
+        config.ai.api_key.clone(),
+        Some(config.get_model()),
+        config.ai.base_url.clone(),
+        config.ai.max_tokens,
+        config.ai.temperature,
+    ).await {
+        Ok(provider) => provider,
+        Err(e) => {
+            println!("❌ Failed to initialize AI provider: {}", e);
+            println!("This usually means:");
+            println!("  • Invalid API key");
+            println!("  • Network connectivity issues");
+            println!("  • Service temporarily unavailable");
+            println!("\nPlease check your API key and try again.");
+            println!("\nFor a basic system check without AI, use: cargo run -- --dry-run");
+            return Ok(());
+        }
+    };
+
+    // Quick test to verify the AI provider is working
+    match ai_provider.analyze("test").await {
+        Ok(_) => {
+            // Provider is working, proceed with question answering
+        },
+        Err(e) => {
+            println!("❌ AI provider test failed: {}", e);
+            println!("This usually indicates:");
+            println!("  • Invalid or expired API key");
+            println!("  • Insufficient API credits/quota");
+            println!("  • Network connectivity issues");
+            println!("\nPlease verify your API key and try again.");
+            println!("\nFor a basic system check without AI, use: cargo run -- --dry-run");
+            return Ok(());
+        }
+    }
+
+    run_unified_ai_analysis(config, question, ui_formatter, AnalysisType::Question).await
 }
 
 pub async fn run_ai_agent_mode(
@@ -33,6 +75,15 @@ pub async fn run_ai_agent_mode(
     ui_formatter: &UIFormatter,
     max_tool_calls: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Check if AI API key is available
+    if config.ai.api_key.is_none() {
+        println!("❌ No AI API key found. AI Agent mode requires an AI provider.");
+        println!("Please set your AI_API_KEY environment variable or use --ai-api-key flag.");
+        println!("Supported providers: OpenAI, Anthropic, Local (Ollama)");
+        println!("\nFor a basic system check without AI, use: cargo run -- --dry-run");
+        return Ok(());
+    }
+
     let ai_provider = create_ai_provider_from_cli(
         &config.get_ai_provider(),
         config.ai.api_key.clone(),
@@ -161,15 +212,53 @@ pub async fn run_unified_ai_analysis(
     ui_formatter: &UIFormatter,
     analysis_type: AnalysisType,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let ai_provider = create_ai_provider_from_cli(
+    // Check if AI API key is available
+    if config.ai.api_key.is_none() {
+        println!("❌ No AI API key found. AI analysis requires an AI provider.");
+        println!("Please set your AI_API_KEY environment variable or use --ai-api-key flag.");
+        println!("Supported providers: OpenAI, Anthropic, Local (Ollama)");
+        println!("\nFor a basic system check without AI, use: cargo run -- --dry-run");
+        return Ok(());
+    }
+
+    // Test AI provider connection before proceeding
+    let ai_provider = match create_ai_provider_from_cli(
         &config.get_ai_provider(),
         config.ai.api_key.clone(),
         Some(config.get_model()),
         config.ai.base_url.clone(),
         config.ai.max_tokens,
         config.ai.temperature,
-    )
-    .await?;
+    ).await {
+        Ok(provider) => provider,
+        Err(e) => {
+            println!("❌ Failed to initialize AI provider: {}", e);
+            println!("This usually means:");
+            println!("  • Invalid API key");
+            println!("  • Network connectivity issues");
+            println!("  • Service temporarily unavailable");
+            println!("\nPlease check your API key and try again.");
+            println!("\nFor a basic system check without AI, use: cargo run -- --dry-run");
+            return Ok(());
+        }
+    };
+
+    // Quick test to verify the AI provider is working
+    match ai_provider.analyze("test").await {
+        Ok(_) => {
+            // Provider is working, proceed with analysis
+        },
+        Err(e) => {
+            println!("❌ AI provider test failed: {}", e);
+            println!("This usually indicates:");
+            println!("  • Invalid or expired API key");
+            println!("  • Insufficient API credits/quota");
+            println!("  • Network connectivity issues");
+            println!("\nPlease verify your API key and try again.");
+            println!("\nFor a basic system check without AI, use: cargo run -- --dry-run");
+            return Ok(());
+        }
+    }
 
     // Different headers based on analysis type
     match analysis_type {

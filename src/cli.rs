@@ -390,6 +390,7 @@ pub enum AIAgentAction {
         pod: Option<String>,
         service: Option<String>,
         lines: Option<usize>,
+        reasoning: Option<String>,
     },
     /// Provide final analysis/answer
     ProvideAnalysis { analysis: String },

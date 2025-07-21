@@ -915,12 +915,27 @@ Your task is to help diagnose and solve the user's problem by:
 5. Providing a final analysis and solution
 
 IMPORTANT: For each response, you MUST use one of these formats:
-- CALL_TOOL: <tool_name> [arguments] - to run a diagnostic tool
-- ANALYZE: <analysis> - to provide analysis or ask for more information  
-- COMPLETE: <final_analysis> - to provide final solution
 
-If you can answer the question with the current information, use COMPLETE: followed by your answer.
-Always explain your reasoning for tool choices.", 
+For tool calls, use this EXACT format:
+REASONING: <explanation of why this tool is needed and what you're checking>
+CALL_TOOL: <tool_name> [arguments]
+
+For analysis without tools:
+ANALYZE: <analysis>
+
+For final solutions:
+COMPLETE: <final_analysis>
+
+CRITICAL: When calling any tool, you MUST first provide a REASONING: line explaining:
+- What you're trying to check or diagnose
+- Why this specific tool is the right choice
+- What information you expect to gather
+
+Example:
+REASONING: Checking memory usage to identify potential memory leaks or high consumption that could cause system slowdown
+CALL_TOOL: free
+
+If you can answer the question with current information, use COMPLETE: followed by your answer.", 
             self.get_available_tools_description(),
             system_context
         ));
@@ -959,9 +974,14 @@ Always explain your reasoning for tool choices.",
 
             // Parse AI response and determine action
             match self.parse_ai_action(&ai_response).await {
-                AIAgentAction::RunTool { tool, namespace, pod, service, lines } => {
+                AIAgentAction::RunTool { tool, namespace, pod, service, lines, reasoning } => {
                     // Reset consecutive analysis counter since we're doing something useful
                     consecutive_analysis_count = 0;
+                    
+                    // Print the reasoning if provided
+                    if let Some(reason) = &reasoning {
+                        println!("🧠 AI reasoning: {}", reason);
+                    }
                     
                     // Execute the tool
                     let result = self.execute_tool(tool.clone(), namespace, pod, service, lines).await;
@@ -1047,7 +1067,12 @@ Always explain your reasoning for tool choices.",
             let ai_response = self.provider.analyze(&conversation_context).await?;
 
             match self.parse_ai_action(&ai_response).await {
-                AIAgentAction::RunTool { tool, namespace, pod, service, lines } => {
+                AIAgentAction::RunTool { tool, namespace, pod, service, lines, reasoning } => {
+                    // Print the reasoning if provided
+                    if let Some(reason) = &reasoning {
+                        println!("🧠 AI reasoning: {}", reason);
+                    }
+                    
                     let result = self.execute_tool(tool.clone(), namespace, pod, service, lines).await;
                     self.current_tool_calls += 1;
                     self.add_tool_result(tool.clone(), result).await;
@@ -1163,8 +1188,17 @@ Always explain your reasoning for tool choices.",
         // Parse the AI response to determine what action to take
         let response_lower = response.to_lowercase();
         
-        // Look for tool calls (more flexible matching)
+        // Look for tool calls with reasoning
         if response_lower.contains("call_tool") || response_lower.contains("run") || response_lower.contains("execute") {
+            // Extract reasoning if present
+            let reasoning = if response_lower.contains("reasoning:") {
+                response.lines()
+                    .find(|line| line.to_lowercase().contains("reasoning:"))
+                    .map(|line| line.replace("REASONING:", "").replace("reasoning:", "").trim().to_string())
+            } else {
+                None
+            };
+
             if let Some(tool_line) = response.lines().find(|line| {
                 let line_lower = line.to_lowercase();
                 line_lower.contains("call_tool") || 
@@ -1193,6 +1227,7 @@ Always explain your reasoning for tool choices.",
                             pod,
                             service,
                             lines,
+                            reasoning,
                         };
                     }
                 }
