@@ -1,0 +1,10 @@
+pub mod ai;
+pub mod cli;
+pub mod commands;
+pub mod config;
+pub mod database;
+pub mod known_issues;
+pub mod output;
+pub mod sysinfo;
+pub mod tools;
+pub mod ui; 
