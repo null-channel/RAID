@@ -1436,14 +1436,22 @@ If you can answer the question with current information, use COMPLETE: followed 
             DebugTool::NetworkHealthCheck => {
                 // For the comprehensive health check, run it and return combined results
                 let results = self.debug_tools.run_network_health_check().await;
+                
+                // Show each individual command that was executed
                 let combined_output = results.iter()
-                    .map(|r| format!("=== {} ===\n{}", r.tool_name, r.output))
+                    .map(|r| format!("=== {} ===\nCommand: {}\n{}", r.tool_name, r.command, r.output))
                     .collect::<Vec<_>>()
                     .join("\n\n");
+                
+                // List all the actual commands that were run
+                let commands_run = results.iter()
+                    .map(|r| r.command.clone())
+                    .collect::<Vec<_>>()
+                    .join("; ");
                     
                 crate::tools::DebugToolResult {
                     tool_name: "network_health_check".to_string(),
-                    command: "Multiple network diagnostic tools".to_string(),
+                    command: commands_run,
                     success: results.iter().any(|r| r.success),
                     output: combined_output,
                     error: None,
