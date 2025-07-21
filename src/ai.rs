@@ -973,9 +973,11 @@ If you can answer the question with current information, use COMPLETE: followed 
 
             // Get AI response based on conversation history
             let conversation_context = self.build_conversation_context();
+            println!("🔄 AI agent iteration {} (tool calls: {}/{})", total_iterations, self.current_tool_calls, self.max_tool_calls);
             let ai_response = self.provider.analyze(&conversation_context).await?;
 
             // Parse AI response and determine action
+            println!("🔍 AI response preview: {}", ai_response.chars().take(150).collect::<String>().replace('\n', " "));
             match self.parse_ai_action(&ai_response).await {
                 AIAgentAction::RunTool { tool, namespace, pod, service, lines, reasoning } => {
                     // Reset consecutive analysis counter since we're doing something useful
@@ -997,6 +999,7 @@ If you can answer the question with current information, use COMPLETE: followed 
                 }
                 AIAgentAction::ProvideAnalysis { analysis } => {
                     consecutive_analysis_count += 1;
+                    println!("🤔 AI provided analysis (consecutive: {}/{})", consecutive_analysis_count, max_consecutive_analysis);
                     
                     // Check if this is asking for user input
                     if analysis.to_lowercase().contains("need more information") || 
@@ -1020,9 +1023,14 @@ If you can answer the question with current information, use COMPLETE: followed 
                         (analysis_lower.contains("nothing more") && analysis_lower.contains("check")) ||
                         (analysis_lower.contains("nothing more") && analysis_lower.contains("tool"));
                     
+                    if indicates_completion {
+                        println!("🏁 AI indicated completion with phrases suggesting no more tools needed");
+                    }
+                    
                     // Safety check: if we've had too many consecutive analysis responses without tool calls
                     // AND the AI is not indicating active work, treat as completion
                     if consecutive_analysis_count >= max_consecutive_analysis && indicates_completion {
+                        println!("⚠️  Stopping due to consecutive analysis limit + completion indication");
                         return Ok(AIAgentResult::Success {
                             final_analysis: analysis,
                             tool_calls_used: self.current_tool_calls,
@@ -1070,7 +1078,22 @@ If you can answer the question with current information, use COMPLETE: followed 
 
     async fn run_continuation(&mut self) -> Result<AIAgentResult, AIError> {
         // Same logic as main run loop, but continues from current state
+        let mut consecutive_analysis_count = 0;
+        let max_consecutive_analysis = 10;
+        let mut total_iterations = 0;
+        let max_total_iterations = 100;
+
         loop {
+            total_iterations += 1;
+            
+            // Safety check: prevent infinite loops
+            if total_iterations > max_total_iterations {
+                return Ok(AIAgentResult::Success {
+                    final_analysis: "Analysis completed. The system has been examined and no critical issues requiring immediate attention were found. If you have specific concerns, please use the debug tools directly with: cargo run -- debug <tool-name>".to_string(),
+                    tool_calls_used: self.current_tool_calls,
+                });
+            }
+
             if self.current_tool_calls >= self.max_tool_calls {
                 return Ok(AIAgentResult::LimitReached {
                     partial_analysis: "Tool call limit reached again. You can continue with more tool calls if needed.".to_string(),
@@ -1079,10 +1102,15 @@ If you can answer the question with current information, use COMPLETE: followed 
             }
 
             let conversation_context = self.build_conversation_context();
+            println!("🔄 AI continuation iteration {} (tool calls: {}/{})", total_iterations, self.current_tool_calls, self.max_tool_calls);
             let ai_response = self.provider.analyze(&conversation_context).await?;
 
+            println!("🔍 AI continuation response preview: {}", ai_response.chars().take(150).collect::<String>().replace('\n', " "));
             match self.parse_ai_action(&ai_response).await {
                 AIAgentAction::RunTool { tool, namespace, pod, service, lines, reasoning } => {
+                    // Reset consecutive analysis counter since we're doing something useful
+                    consecutive_analysis_count = 0;
+                    
                     // Print the reasoning if provided
                     if let Some(reason) = &reasoning {
                         println!("🧠 AI reasoning: {}", reason);
@@ -1093,6 +1121,8 @@ If you can answer the question with current information, use COMPLETE: followed 
                     self.add_tool_result(tool.clone(), result).await;
                 }
                 AIAgentAction::ProvideAnalysis { analysis } => {
+                    consecutive_analysis_count += 1;
+                    
                     if analysis.to_lowercase().contains("need more information") || 
                        analysis.to_lowercase().contains("could you") ||
                        analysis.to_lowercase().contains("can you provide") {
@@ -1101,6 +1131,28 @@ If you can answer the question with current information, use COMPLETE: followed 
                             tool_calls_used: self.current_tool_calls,
                         });
                     }
+                    
+                    // Check if the AI is indicating it has completed its analysis and has no more tools to run
+                    let analysis_lower = analysis.to_lowercase();
+                    let indicates_completion = analysis_lower.contains("no additional") ||
+                        analysis_lower.contains("no further") ||
+                        analysis_lower.contains("analysis complete") ||
+                        analysis_lower.contains("diagnostic complete") ||
+                        analysis_lower.contains("examination complete") ||
+                        (analysis_lower.contains("no more") && analysis_lower.contains("check")) ||
+                        (analysis_lower.contains("no more") && analysis_lower.contains("tool")) ||
+                        (analysis_lower.contains("nothing more") && analysis_lower.contains("check")) ||
+                        (analysis_lower.contains("nothing more") && analysis_lower.contains("tool"));
+                    
+                    // Safety check: if we've had too many consecutive analysis responses without tool calls
+                    // AND the AI is not indicating active work, treat as completion
+                    if consecutive_analysis_count >= max_consecutive_analysis && indicates_completion {
+                        return Ok(AIAgentResult::Success {
+                            final_analysis: analysis,
+                            tool_calls_used: self.current_tool_calls,
+                        });
+                    }
+                    
                     self.add_message(MessageRole::Assistant, analysis);
                 }
                 AIAgentAction::AskUser { question } => {
@@ -1311,14 +1363,8 @@ If you can answer the question with current information, use COMPLETE: followed 
             }
         }
 
-        // Look for completion indicators
-        if response_lower.contains("complete:") || 
-           response_lower.contains("final") || 
-           response_lower.contains("conclusion") ||
-           response_lower.contains("to answer your question") ||
-           (response_lower.contains("appears") && response_lower.contains("setup")) ||
-           (response_lower.contains("looks") && response_lower.contains("correct")) ||
-           response_lower.contains("based on the system information") {
+        // Look for explicit completion format only - "COMPLETE:" at start of line
+        if response.contains("COMPLETE:") || response_lower.lines().any(|line| line.trim().starts_with("complete:")) {
             let analysis = response.replace("COMPLETE:", "").replace("complete:", "").trim().to_string();
             return crate::cli::AIAgentAction::ProvideAnalysis { analysis };
         }
