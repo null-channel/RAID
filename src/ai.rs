@@ -1230,11 +1230,73 @@ If you can answer the question with current information, use COMPLETE: followed 
                 if let Some(tool_name) = parts.first() {
                     // Map string to DebugTool enum
                     if let Some(tool) = self.string_to_debug_tool(tool_name) {
-                        // Extract arguments (simplified for now)
-                        let namespace = self.extract_arg(&parts, "--namespace");
-                        let pod = self.extract_arg(&parts, "--pod");
-                        let service = self.extract_arg(&parts, "--service");
+                        // Extract arguments - improved to handle positional arguments
+                        let mut namespace = self.extract_arg(&parts, "--namespace");
+                        let mut pod = self.extract_arg(&parts, "--pod");
+                        let mut service = self.extract_arg(&parts, "--service");
                         let lines = self.extract_arg(&parts, "--lines").and_then(|s| s.parse().ok());
+                        
+                        // Handle positional arguments for specific tools
+                        match tool {
+                            crate::cli::DebugTool::KubectlDescribePod => {
+                                // For kubectl_describe_pod, first non-flag argument is the pod name
+                                if pod.is_none() && parts.len() > 1 {
+                                    for i in 1..parts.len() {
+                                        if !parts[i].starts_with('-') && !parts[i-1].starts_with('-') {
+                                            pod = Some(parts[i].to_string());
+                                            break;
+                                        } else if i > 1 && parts[i-1] == "--namespace" {
+                                            continue; // Skip namespace value
+                                        } else if !parts[i].starts_with('-') {
+                                            pod = Some(parts[i].to_string());
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            crate::cli::DebugTool::JournalctlService | crate::cli::DebugTool::SystemctlStatus => {
+                                // For service tools, first non-flag argument is the service name
+                                if service.is_none() && parts.len() > 1 {
+                                    for i in 1..parts.len() {
+                                        if !parts[i].starts_with('-') && !parts[i-1].starts_with('-') {
+                                            service = Some(parts[i].to_string());
+                                            break;
+                                        } else if i > 1 && (parts[i-1] == "--namespace" || parts[i-1] == "--lines") {
+                                            continue; // Skip flag values
+                                        } else if !parts[i].starts_with('-') {
+                                            service = Some(parts[i].to_string());
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {
+                                // For other tools, extract any positional arguments as appropriate
+                                // If no specific pod/service was found but there are non-flag args, use the first one
+                                if pod.is_none() && service.is_none() && parts.len() > 1 {
+                                    for i in 1..parts.len() {
+                                        if !parts[i].starts_with('-') && !parts[i-1].starts_with('-') {
+                                            // Determine if this tool typically uses pod or service
+                                            if tool_name.contains("kubectl") && !tool_name.contains("service") {
+                                                pod = Some(parts[i].to_string());
+                                            } else if tool_name.contains("service") || tool_name.contains("systemctl") {
+                                                service = Some(parts[i].to_string());
+                                            }
+                                            break;
+                                        } else if i > 1 && (parts[i-1] == "--namespace" || parts[i-1] == "--lines") {
+                                            continue; // Skip flag values
+                                        } else if !parts[i].starts_with('-') {
+                                            if tool_name.contains("kubectl") && !tool_name.contains("service") {
+                                                pod = Some(parts[i].to_string());
+                                            } else if tool_name.contains("service") || tool_name.contains("systemctl") {
+                                                service = Some(parts[i].to_string());
+                                            }
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         
                         return crate::cli::AIAgentAction::RunTool {
                             tool,
@@ -1366,10 +1428,10 @@ If you can answer the question with current information, use COMPLETE: followed 
                 } else {
                     crate::tools::DebugToolResult {
                         tool_name: "kubectl_describe_pod".to_string(),
-                        command: "kubectl describe pod".to_string(),
+                        command: "kubectl describe pod <missing-pod-name>".to_string(),
                         success: false,
-                        output: String::new(),
-                        error: Some("Pod name required".to_string()),
+                        output: "To describe a pod, you must first get the list of available pods.\n\nSUGGESTED NEXT STEPS:\n1. Run: kubectl_get_pods [--namespace <namespace>]\n2. Find the pod name you want to describe\n3. Run: kubectl_describe_pod <pod-name> [--namespace <namespace>]\n\nExample:\n- kubectl_get_pods --namespace kube-system\n- kubectl_describe_pod coredns-1234 --namespace kube-system".to_string(),
+                        error: Some("Pod name required. Use kubectl_get_pods first to see available pods.".to_string()),
                         execution_time_ms: 0,
                     }
                 }
@@ -1394,10 +1456,10 @@ If you can answer the question with current information, use COMPLETE: followed 
                 } else {
                     crate::tools::DebugToolResult {
                         tool_name: "journalctl_service".to_string(),
-                        command: "journalctl -u".to_string(),
+                        command: "journalctl -u <missing-service-name>".to_string(),
                         success: false,
-                        output: String::new(),
-                        error: Some("Service name required".to_string()),
+                        output: "To check service logs, you must specify a service name.\n\nCOMMON SERVICES:\n- systemd services: sshd, nginx, docker, NetworkManager\n- kubernetes: kubelet, kube-proxy\n\nSUGGESTED NEXT STEPS:\n1. Use: systemctl_failed to see failed services\n2. Or specify a known service: journalctl_service <service-name>\n\nExample:\n- journalctl_service docker\n- journalctl_service kubelet".to_string(),
+                        error: Some("Service name required. Try: systemctl_failed to see available services.".to_string()),
                         execution_time_ms: 0,
                     }
                 }
@@ -1410,10 +1472,10 @@ If you can answer the question with current information, use COMPLETE: followed 
                 } else {
                     crate::tools::DebugToolResult {
                         tool_name: "systemctl_status".to_string(),
-                        command: "systemctl status".to_string(),
+                        command: "systemctl status <missing-service-name>".to_string(),
                         success: false,
-                        output: String::new(),
-                        error: Some("Service name required".to_string()),
+                        output: "To check service status, you must specify a service name.\n\nCOMMON SERVICES:\n- systemd services: sshd, nginx, docker, NetworkManager\n- kubernetes: kubelet, kube-proxy\n\nSUGGESTED NEXT STEPS:\n1. Use: systemctl_failed to see failed services\n2. Or specify a known service: systemctl_status <service-name>\n\nExample:\n- systemctl_status docker\n- systemctl_status kubelet".to_string(),
+                        error: Some("Service name required. Try: systemctl_failed to see available services.".to_string()),
                         execution_time_ms: 0,
                     }
                 }
@@ -1504,10 +1566,15 @@ If you can answer the question with current information, use COMPLETE: followed 
         r#"
 KUBERNETES TOOLS:
 - kubectl_get_pods [--namespace <ns>]: List all pods in namespace
-- kubectl_describe_pod <pod_name> [--namespace <ns>]: Get detailed pod information  
+- kubectl_describe_pod <pod_name> [--namespace <ns>]: Get detailed pod information (REQUIRES pod name)
 - kubectl_get_services [--namespace <ns>]: List all services in namespace
 - kubectl_get_nodes: List all cluster nodes
 - kubectl_get_events [--namespace <ns>]: Get recent cluster events
+
+IMPORTANT: For kubectl_describe_pod, you MUST provide a pod name. First use kubectl_get_pods to see available pods, then describe specific ones.
+Example: 
+  1. CALL_TOOL: kubectl_get_pods --namespace kube-system
+  2. CALL_TOOL: kubectl_describe_pod coredns-12345 --namespace kube-system
 
 NETWORK DIAGNOSTIC TOOLS:
 - ip_addr: Show network interfaces and IP addresses
@@ -1530,13 +1597,19 @@ NETWORK DIAGNOSTIC TOOLS:
 
 SYSTEM LOGS:
 - journalctl_recent [--lines <n>]: Get recent system logs (default 50 lines)
-- journalctl_service <service_name> [--lines <n>]: Get logs for specific service
+- journalctl_service <service_name> [--lines <n>]: Get logs for specific service (REQUIRES service name)
 - journalctl_boot: Get boot logs
 - journalctl_errors [--lines <n>]: Get error logs only
 
 SYSTEM SERVICES:
-- systemctl_status <service_name>: Get status of specific service
-- systemctl_failed: Show failed systemd units
+- systemctl_status <service_name>: Get status of specific service (REQUIRES service name)
+- systemctl_failed: Show failed systemd units (use this first to find service names)
+
+IMPORTANT: For service-specific tools, use systemctl_failed first to see available service names.
+Example workflow:
+  1. CALL_TOOL: systemctl_failed
+  2. CALL_TOOL: systemctl_status docker
+  3. CALL_TOOL: journalctl_service docker --lines 50
 
 PROCESS & PERFORMANCE:
 - ps_aux: List all running processes
