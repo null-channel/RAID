@@ -1157,12 +1157,14 @@ async fn run_question_answering_with_config(
         system_context.push_str("Container Runtime: Available\n");
     }
 
-    // Get AI analysis (this is synchronous for now, but shows progress)
-    let final_analysis = ui_formatter.show_progress("Getting AI analysis", || {
-        // For now, we'll use a blocking approach
-        // In a real implementation, you'd want to handle async properly
-        "AI analysis would go here - this is a simplified version for demo purposes."
-    });
+    // Get AI analysis
+    let final_analysis = if config.ui.progress_indicators {
+        ui_formatter.show_progress("Getting AI analysis", || async {
+            ai_provider.answer_question(question, &system_context).await
+        }).await?
+    } else {
+        ai_provider.answer_question(question, &system_context).await?
+    };
 
     println!("\n🤖 AI Analysis:");
     println!("{}", final_analysis);
