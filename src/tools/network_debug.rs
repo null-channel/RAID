@@ -644,9 +644,15 @@ impl DebugTools {
         let execution_time = start_time.elapsed().as_millis() as u64;
         let output_str = results.join("\n");
 
+        // Build the actual command list that was executed
+        let commands_run = dns_servers.iter()
+            .map(|dns_server| format!("dig @{} {} +time=2 +short", dns_server, domain))
+            .collect::<Vec<_>>()
+            .join("; ");
+
         DebugToolResult {
             tool_name: "dns_test".to_string(),
-            command: format!("dig {} (testing multiple DNS servers)", domain),
+            command: commands_run,
             success: !results.is_empty(),
             output: output_str,
             error: None,
@@ -844,9 +850,15 @@ impl DebugTools {
         let output_str = results.join("\n");
         let overall_success = results.iter().any(|r| r.contains("✅"));
 
+        // Build the actual command list that was executed
+        let hosts_tested = test_hosts.iter()
+            .map(|(host, _)| format!("ping -c 2 -W 3 {}", host))
+            .collect::<Vec<_>>()
+            .join("; ");
+
         DebugToolResult {
             tool_name: "connectivity_test".to_string(),
-            command: "ping -c 2 -W 3 (multiple hosts)".to_string(),
+            command: hosts_tested,
             success: overall_success,
             output: output_str,
             error: if overall_success { None } else { Some("No hosts reachable".to_string()) },
@@ -1120,8 +1132,10 @@ mod tests {
         // Test DNS test with a domain
         let result = debug_tools.run_dns_test("google.com").await;
         assert_eq!(result.tool_name, "dns_test");
-        assert!(result.command.contains("dig google.com"));
-        assert!(result.command.contains("multiple DNS servers"));
+        assert!(result.command.contains("dig @8.8.8.8 google.com")); // Should contain actual DNS servers
+        assert!(result.command.contains("dig @1.1.1.1 google.com"));
+        assert!(result.command.contains("dig @9.9.9.9 google.com"));
+        assert!(result.command.contains("; ")); // Should be multiple commands joined
         
         // DNS test should always report success if at least one DNS server responds
         // Even if dig is not installed, the tool should handle it gracefully
@@ -1300,7 +1314,9 @@ mod tests {
         let result = debug_tools.run_connectivity_test().await;
         assert_eq!(result.tool_name, "connectivity_test");
         assert!(result.command.contains("ping"));
-        assert!(result.command.contains("multiple hosts"));
+        assert!(result.command.contains("8.8.8.8")); // Should contain actual hosts
+        assert!(result.command.contains("1.1.1.1"));
+        assert!(result.command.contains("; ")); // Should be multiple commands joined
 
         // Should test multiple hosts and provide detailed output
         assert!(!result.output.is_empty());
