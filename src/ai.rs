@@ -947,9 +947,11 @@ If you can answer the question with current information, use COMPLETE: followed 
 
         // Safety counters to prevent infinite loops
         let mut consecutive_analysis_count = 0;
-        let max_consecutive_analysis = 10; // Increased from 3 to 10 - AI should be able to analyze more before giving up
+        let max_consecutive_analysis = 5; // Reduced back to prevent infinite loops
         let mut total_iterations = 0;
-        let max_total_iterations = 100; // Increased from 20 to 100 - AI should be able to iterate much more
+        let max_total_iterations = 30; // Reduced to prevent excessive iterations
+        let mut last_analysis_content: Option<String> = None; // Track repeated responses
+        let mut identical_response_count = 0;
 
         // Main agent loop
         loop {
@@ -1003,6 +1005,32 @@ If you can answer the question with current information, use COMPLETE: followed 
                     consecutive_analysis_count += 1;
                     println!("🤔 AI provided analysis (consecutive: {}/{})", consecutive_analysis_count, max_consecutive_analysis);
                     
+                    // LOOP DETECTION: Check if AI is providing identical responses
+                    if let Some(ref last_content) = last_analysis_content {
+                        let current_trimmed = analysis.trim();
+                        let last_trimmed = last_content.trim();
+                        
+                        // Check for identical or very similar responses (allowing for minor variations)
+                        if current_trimmed == last_trimmed || 
+                           (current_trimmed.len() > 50 && last_trimmed.len() > 50 && 
+                            current_trimmed.chars().take(100).collect::<String>() == 
+                            last_trimmed.chars().take(100).collect::<String>()) {
+                            identical_response_count += 1;
+                            println!("🔄 Detected identical response #{} - AI may be stuck in loop", identical_response_count);
+                            
+                            if identical_response_count >= 2 {
+                                println!("⚠️  LOOP DETECTED: AI provided same response {} times. Breaking loop.", identical_response_count + 1);
+                                return Ok(AIAgentResult::Success {
+                                    final_analysis: format!("Analysis stopped due to repetitive responses. \n\nLast analysis:\n{}\n\nThe AI appears to have identified issues but got stuck in a loop. Please review the tool output above for specific diagnostic information.", analysis),
+                                    tool_calls_used: self.current_tool_calls,
+                                });
+                            }
+                        } else {
+                            identical_response_count = 0; // Reset if response is different
+                        }
+                    }
+                    last_analysis_content = Some(analysis.clone());
+                    
                     // Check if this is asking for user input
                     if analysis.to_lowercase().contains("need more information") || 
                        analysis.to_lowercase().contains("could you") ||
@@ -1029,10 +1057,23 @@ If you can answer the question with current information, use COMPLETE: followed 
                         println!("🏁 AI indicated completion with phrases suggesting no more tools needed");
                     }
                     
+                    // WRONG FORMAT DETECTION: If AI is using old format but should be calling tools
+                    let using_old_format = analysis_lower.contains("## critical") || 
+                                          analysis_lower.contains("**issue**:") ||
+                                          analysis_lower.contains("**verify**:") ||
+                                          analysis_lower.contains("**fix**:");
+                    
+                    if using_old_format && consecutive_analysis_count >= 2 {
+                        println!("⚠️  AI is using old format instead of REASONING/CALL_TOOL. Providing guidance.");
+                        self.add_message(MessageRole::Assistant, analysis);
+                        self.add_message(MessageRole::System, 
+                            "You are providing analysis in the old format instead of using tools. Remember to use this format:\n\nREASONING: [explain what you want to check]\nCALL_TOOL: [tool_name] [arguments]\n\nFor example:\nREASONING: Need to check PersistentVolume status to understand why PVC mounting is failing\nCALL_TOOL: kubectl_get_pv".to_string());
+                        continue;
+                    }
+                    
                     // Safety check: if we've had too many consecutive analysis responses without tool calls
-                    // AND the AI is not indicating active work, treat as completion
-                    if consecutive_analysis_count >= max_consecutive_analysis && indicates_completion {
-                        println!("⚠️  Stopping due to consecutive analysis limit + completion indication");
+                    if consecutive_analysis_count >= max_consecutive_analysis {
+                        println!("⚠️  Stopping due to consecutive analysis limit reached");
                         return Ok(AIAgentResult::Success {
                             final_analysis: analysis,
                             tool_calls_used: self.current_tool_calls,
@@ -1081,9 +1122,11 @@ If you can answer the question with current information, use COMPLETE: followed 
     async fn run_continuation(&mut self) -> Result<AIAgentResult, AIError> {
         // Same logic as main run loop, but continues from current state
         let mut consecutive_analysis_count = 0;
-        let max_consecutive_analysis = 10;
+        let max_consecutive_analysis = 5;
         let mut total_iterations = 0;
-        let max_total_iterations = 100;
+        let max_total_iterations = 30;
+        let mut last_analysis_content: Option<String> = None; // Track repeated responses
+        let mut identical_response_count = 0;
 
         loop {
             total_iterations += 1;
@@ -1124,6 +1167,33 @@ If you can answer the question with current information, use COMPLETE: followed 
                 }
                 AIAgentAction::ProvideAnalysis { analysis } => {
                     consecutive_analysis_count += 1;
+                    println!("🤔 AI continuation analysis (consecutive: {}/{})", consecutive_analysis_count, max_consecutive_analysis);
+                    
+                    // LOOP DETECTION: Check if AI is providing identical responses
+                    if let Some(ref last_content) = last_analysis_content {
+                        let current_trimmed = analysis.trim();
+                        let last_trimmed = last_content.trim();
+                        
+                        // Check for identical or very similar responses
+                        if current_trimmed == last_trimmed || 
+                           (current_trimmed.len() > 50 && last_trimmed.len() > 50 && 
+                            current_trimmed.chars().take(100).collect::<String>() == 
+                            last_trimmed.chars().take(100).collect::<String>()) {
+                            identical_response_count += 1;
+                            println!("🔄 Detected identical continuation response #{}", identical_response_count);
+                            
+                            if identical_response_count >= 2 {
+                                println!("⚠️  CONTINUATION LOOP DETECTED: Breaking loop.");
+                                return Ok(AIAgentResult::Success {
+                                    final_analysis: format!("Analysis stopped due to repetitive responses.\n\nLast analysis:\n{}", analysis),
+                                    tool_calls_used: self.current_tool_calls,
+                                });
+                            }
+                        } else {
+                            identical_response_count = 0;
+                        }
+                    }
+                    last_analysis_content = Some(analysis.clone());
                     
                     if analysis.to_lowercase().contains("need more information") || 
                        analysis.to_lowercase().contains("could you") ||
@@ -1147,8 +1217,7 @@ If you can answer the question with current information, use COMPLETE: followed 
                         (analysis_lower.contains("nothing more") && analysis_lower.contains("tool"));
                     
                     // Safety check: if we've had too many consecutive analysis responses without tool calls
-                    // AND the AI is not indicating active work, treat as completion
-                    if consecutive_analysis_count >= max_consecutive_analysis && indicates_completion {
+                    if consecutive_analysis_count >= max_consecutive_analysis {
                         return Ok(AIAgentResult::Success {
                             final_analysis: analysis,
                             tool_calls_used: self.current_tool_calls,
@@ -1189,9 +1258,25 @@ If you can answer the question with current information, use COMPLETE: followed 
         // The conversation context already contains our AI Agent system prompt
         match self.provider.name() {
             "OpenAI" => {
-                // Use a simplified prompt that just processes the conversation
-                let simple_prompt = format!("Please respond to this conversation following the instructions given in the SYSTEM message:\n\n{}", conversation_context);
-                self.provider.analyze(&simple_prompt).await
+                // Use a more explicit prompt that enforces the correct format
+                let explicit_prompt = format!(
+                    "You are an AI diagnostic agent. Follow the SYSTEM message instructions EXACTLY. 
+
+CRITICAL: You MUST respond in one of these formats:
+
+1. To run a diagnostic tool:
+REASONING: [explain what you're checking]
+CALL_TOOL: [tool_name] [arguments]
+
+2. To provide final analysis:
+COMPLETE: [your final analysis]
+
+DO NOT use any other format like '## Critical Issues' or markdown headers.
+
+Here is the conversation:\n\n{}", 
+                    conversation_context
+                );
+                self.provider.analyze(&explicit_prompt).await
             }
             _ => {
                 // For other providers, use the conversation context as-is
