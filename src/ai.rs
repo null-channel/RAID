@@ -782,6 +782,7 @@ pub struct AIAgent {
     max_tool_calls: usize,
     current_tool_calls: usize,
     conversation_history: Vec<AIAgentMessage>,
+    tool_call_database: std::collections::HashMap<String, crate::tools::DebugToolResult>,
 }
 
 #[derive(Debug, Clone)]
@@ -842,6 +843,7 @@ impl AIAgent {
             max_tool_calls: config.max_tool_calls,
             current_tool_calls: 0,
             conversation_history: Vec::new(),
+            tool_call_database: std::collections::HashMap::new(),
         }
     }
 
@@ -950,8 +952,6 @@ If you can answer the question with current information, use COMPLETE: followed 
         let max_consecutive_analysis = 5; // Reduced back to prevent infinite loops
         let mut total_iterations = 0;
         let max_total_iterations = 30; // Reduced to prevent excessive iterations
-        let mut last_analysis_content: Option<String> = None; // Track repeated responses
-        let mut identical_response_count = 0;
 
         // Main agent loop
         loop {
@@ -992,9 +992,19 @@ If you can answer the question with current information, use COMPLETE: followed 
                         println!("🧠 AI reasoning: {}", reason);
                     }
                     
-                    // Execute the tool
-                    let result = self.execute_tool(tool.clone(), namespace, pod, service, lines).await;
+                    // Check if this tool call has been made before
+                    if let Some(duplicate_result) = self.check_and_handle_duplicate_tool_call(&tool, &namespace, &pod, &service, &lines).await {
+                        // Tool was already executed - AI has been reminded, continue to next iteration
+                        continue;
+                    }
+                    
+                    // Execute the tool (not a duplicate)
+                    let result = self.execute_tool(tool.clone(), namespace.clone(), pod.clone(), service.clone(), lines).await;
                     self.current_tool_calls += 1;
+
+                    // Store result in database for future deduplication
+                    let key = Self::generate_tool_call_key(&tool, &namespace, &pod, &service, &lines);
+                    self.tool_call_database.insert(key, result.clone());
 
                     // Add tool result to conversation
                     self.add_tool_result(tool, result).await;
@@ -1004,32 +1014,6 @@ If you can answer the question with current information, use COMPLETE: followed 
                 AIAgentAction::ProvideAnalysis { analysis } => {
                     consecutive_analysis_count += 1;
                     println!("🤔 AI provided analysis (consecutive: {}/{})", consecutive_analysis_count, max_consecutive_analysis);
-                    
-                    // LOOP DETECTION: Check if AI is providing identical responses
-                    if let Some(ref last_content) = last_analysis_content {
-                        let current_trimmed = analysis.trim();
-                        let last_trimmed = last_content.trim();
-                        
-                        // Check for identical or very similar responses (allowing for minor variations)
-                        if current_trimmed == last_trimmed || 
-                           (current_trimmed.len() > 50 && last_trimmed.len() > 50 && 
-                            current_trimmed.chars().take(100).collect::<String>() == 
-                            last_trimmed.chars().take(100).collect::<String>()) {
-                            identical_response_count += 1;
-                            println!("🔄 Detected identical response #{} - AI may be stuck in loop", identical_response_count);
-                            
-                            if identical_response_count >= 2 {
-                                println!("⚠️  LOOP DETECTED: AI provided same response {} times. Breaking loop.", identical_response_count + 1);
-                                return Ok(AIAgentResult::Success {
-                                    final_analysis: format!("Analysis stopped due to repetitive responses. \n\nLast analysis:\n{}\n\nThe AI appears to have identified issues but got stuck in a loop. Please review the tool output above for specific diagnostic information.", analysis),
-                                    tool_calls_used: self.current_tool_calls,
-                                });
-                            }
-                        } else {
-                            identical_response_count = 0; // Reset if response is different
-                        }
-                    }
-                    last_analysis_content = Some(analysis.clone());
                     
                     // Check if this is asking for user input
                     if analysis.to_lowercase().contains("need more information") || 
@@ -1125,8 +1109,6 @@ If you can answer the question with current information, use COMPLETE: followed 
         let max_consecutive_analysis = 5;
         let mut total_iterations = 0;
         let max_total_iterations = 30;
-        let mut last_analysis_content: Option<String> = None; // Track repeated responses
-        let mut identical_response_count = 0;
 
         loop {
             total_iterations += 1;
@@ -1161,39 +1143,24 @@ If you can answer the question with current information, use COMPLETE: followed 
                         println!("🧠 AI reasoning: {}", reason);
                     }
                     
-                    let result = self.execute_tool(tool.clone(), namespace, pod, service, lines).await;
+                    // Check if this tool call has been made before
+                    if let Some(duplicate_result) = self.check_and_handle_duplicate_tool_call(&tool, &namespace, &pod, &service, &lines).await {
+                        // Tool was already executed - AI has been reminded, continue to next iteration
+                        continue;
+                    }
+                    
+                    let result = self.execute_tool(tool.clone(), namespace.clone(), pod.clone(), service.clone(), lines).await;
                     self.current_tool_calls += 1;
+                    
+                    // Store result in database for future deduplication
+                    let key = Self::generate_tool_call_key(&tool, &namespace, &pod, &service, &lines);
+                    self.tool_call_database.insert(key, result.clone());
+                    
                     self.add_tool_result(tool.clone(), result).await;
                 }
                 AIAgentAction::ProvideAnalysis { analysis } => {
                     consecutive_analysis_count += 1;
                     println!("🤔 AI continuation analysis (consecutive: {}/{})", consecutive_analysis_count, max_consecutive_analysis);
-                    
-                    // LOOP DETECTION: Check if AI is providing identical responses
-                    if let Some(ref last_content) = last_analysis_content {
-                        let current_trimmed = analysis.trim();
-                        let last_trimmed = last_content.trim();
-                        
-                        // Check for identical or very similar responses
-                        if current_trimmed == last_trimmed || 
-                           (current_trimmed.len() > 50 && last_trimmed.len() > 50 && 
-                            current_trimmed.chars().take(100).collect::<String>() == 
-                            last_trimmed.chars().take(100).collect::<String>()) {
-                            identical_response_count += 1;
-                            println!("🔄 Detected identical continuation response #{}", identical_response_count);
-                            
-                            if identical_response_count >= 2 {
-                                println!("⚠️  CONTINUATION LOOP DETECTED: Breaking loop.");
-                                return Ok(AIAgentResult::Success {
-                                    final_analysis: format!("Analysis stopped due to repetitive responses.\n\nLast analysis:\n{}", analysis),
-                                    tool_calls_used: self.current_tool_calls,
-                                });
-                            }
-                        } else {
-                            identical_response_count = 0;
-                        }
-                    }
-                    last_analysis_content = Some(analysis.clone());
                     
                     if analysis.to_lowercase().contains("need more information") || 
                        analysis.to_lowercase().contains("could you") ||
@@ -1251,6 +1218,71 @@ If you can answer the question with current information, use COMPLETE: followed 
             tool_calls: Vec::new(),
             timestamp: std::time::SystemTime::now(),
         });
+    }
+
+    /// Generate a unique key for a tool call based on tool name and arguments
+    fn generate_tool_call_key(
+        tool: &crate::cli::DebugTool,
+        namespace: &Option<String>,
+        pod: &Option<String>,
+        service: &Option<String>,
+        lines: &Option<usize>,
+    ) -> String {
+        let mut key = format!("{:?}", tool);
+        
+        if let Some(ns) = namespace {
+            key.push_str(&format!("|namespace:{}", ns));
+        }
+        if let Some(p) = pod {
+            key.push_str(&format!("|pod:{}", p));
+        }
+        if let Some(s) = service {
+            key.push_str(&format!("|service:{}", s));
+        }
+        if let Some(l) = lines {
+            key.push_str(&format!("|lines:{}", l));
+        }
+        
+        key
+    }
+
+    /// Check if a tool call has been made before and handle accordingly
+    async fn check_and_handle_duplicate_tool_call(
+        &mut self,
+        tool: &crate::cli::DebugTool,
+        namespace: &Option<String>,
+        pod: &Option<String>,
+        service: &Option<String>,
+        lines: &Option<usize>,
+    ) -> Option<crate::tools::DebugToolResult> {
+        let key = Self::generate_tool_call_key(tool, namespace, pod, service, lines);
+        
+        // Check for previous result first, then handle messaging separately to avoid borrow conflicts
+        let previous_result = self.tool_call_database.get(&key).cloned();
+        
+        if let Some(result) = previous_result {
+            println!("🔁 Tool call already executed: {}", result.command);
+            println!("📋 Reminding AI of previous result instead of re-executing");
+            
+            // Add a system message to remind the AI of the previous result
+            let reminder_message = format!(
+                "REMINDER: You already executed this tool call previously:\n\nCommand: {}\nResult: {}\nSuccess: {}\n\nPlease use this existing information instead of calling the tool again. Analyze the result and decide on your next action.",
+                result.command,
+                if result.output.len() > 1000 {
+                    format!("{}... (truncated, {} chars total)", &result.output[..1000], result.output.len())
+                } else {
+                    result.output.clone()
+                },
+                result.success
+            );
+            
+            self.add_message(MessageRole::System, reminder_message);
+            
+            // Return the previous result to indicate it was a duplicate
+            return Some(result);
+        }
+        
+        None // No duplicate found
     }
 
     async fn get_ai_response(&self, conversation_context: &str) -> Result<String, AIError> {
@@ -1316,6 +1348,7 @@ Here is the conversation:\n\n{}",
     fn build_conversation_context(&self) -> String {
         let mut context = String::new();
         
+        // Include all conversation history for full context
         for message in &self.conversation_history {
             match message.role {
                 MessageRole::System => {
@@ -1341,15 +1374,27 @@ Here is the conversation:\n\n{}",
             }
         }
 
+        // Add tool call database summary for complete context awareness
+        if !self.tool_call_database.is_empty() {
+            context.push_str("TOOLS_EXECUTED_SUMMARY:\n");
+            for (key, result) in &self.tool_call_database {
+                let status = if result.success { "✅" } else { "❌" };
+                context.push_str(&format!("- {} {}: {}\n", status, key, result.command));
+            }
+            context.push_str("\n");
+        }
+
         context.push_str(&format!(
-            "Tool calls used: {}/{}\n\n",
+            "STATUS: Tool calls used: {}/{}\n",
             self.current_tool_calls, self.max_tool_calls
         ));
-
-        context.push_str("What would you like to do next? You can:\n");
-        context.push_str("- CALL_TOOL: <tool_name> [arguments] - to run a diagnostic tool\n");
-        context.push_str("- ANALYZE: <analysis> - to provide analysis or ask for more information\n");
-        context.push_str("- COMPLETE: <final_analysis> - to provide final solution\n");
+        
+        context.push_str("AVAILABLE_ACTIONS:\n");
+        context.push_str("- REASONING: [explain what you want to check] + CALL_TOOL: <tool_name> [arguments]\n");
+        context.push_str("- ANALYZE: [provide analysis based on current information]\n");
+        context.push_str("- COMPLETE: [final analysis and solution]\n\n");
+        
+        context.push_str("IMPORTANT: Before calling any tool, check if you've already executed it. Use existing information when available.\n\n");
 
         context
     }
