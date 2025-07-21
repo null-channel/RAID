@@ -7,14 +7,14 @@ mod output;
 mod sysinfo;
 mod tools;
 mod ui;
-use ai::create_ai_provider_from_cli;
+use ai::{create_ai_provider_from_cli, AIAgent, AIAgentConfig, AIAgentResult};
 use clap::Parser;
 use cli::{AIAgentAction, CheckComponent, Cli, Commands, ConfigAction, DebugTool, IssueAction, OutputFormat};
 use config::RaidConfig;
 use database::Database;
 use known_issues::IssueCategory;
 use output::{create_system_health_report, print_json, print_yaml};
-use std::env;
+
 use std::io::{self, Write};
 use sysinfo::{SystemInfo, collect_basic_system_info, collect_system_info};
 use tools::DebugTools;
@@ -72,8 +72,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Check if we have a problem description for AI agent mode
     if let Some(problem_description) = &cli.problem_description {
-        // Question answering mode - help the user resolve their issue
-        return run_question_answering_with_config(&config, problem_description, &ui_formatter).await;
+        // Choose between old question answering and new iterative AI agent mode
+        if cli.ai_agent_mode {
+            return run_ai_agent_mode(&config, problem_description, &ui_formatter, cli.ai_max_tool_calls).await;
+        } else {
+            // Question answering mode - help the user resolve their issue
+            return run_question_answering_with_config(&config, problem_description, &ui_formatter).await;
+        }
     }
 
     // If AI_API_KEY is not set and no key provided via CLI, force dry-run and print a message
@@ -375,8 +380,8 @@ mod tests {
     #[test]
     fn test_ai_tool_selection_integration() {
         // Test that the AI tool selection prompt format is correct
-        let question = "Is my nginx container running?";
-        let context = "Operating System: Linux\nContainers: 3 running\n";
+        let _question = "Is my nginx container running?";
+        let _context = "Operating System: Linux\nContainers: 3 running\n";
 
         // This would be the format we expect the AI to return
         let mock_ai_response = "docker_ps\ndocker_inspect nginx\ndocker_logs nginx --lines 10";
@@ -1161,6 +1166,133 @@ async fn run_question_answering_with_config(
 
     println!("\n🤖 AI Analysis:");
     println!("{}", final_analysis);
+
+    Ok(())
+}
+
+async fn run_ai_agent_mode(
+    config: &RaidConfig,
+    problem_description: &str,
+    ui_formatter: &UIFormatter,
+    max_tool_calls: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let ai_provider = create_ai_provider_from_cli(
+        &config.get_ai_provider(),
+        config.ai.api_key.clone(),
+        Some(config.get_model()),
+        config.ai.base_url.clone(),
+        config.ai.max_tokens,
+        config.ai.temperature,
+    )
+    .await?;
+
+    println!("🤖 AI Agent Mode - Iterative Problem Solving");
+    println!("Problem: {}", problem_description);
+    println!("Max tool calls: {}", max_tool_calls);
+    println!("Starting analysis...\n");
+
+    // Collect basic system info with progress
+    let sys_info = ui_formatter.show_progress("Collecting system information", || {
+        collect_basic_system_info()
+    });
+
+    // Create comprehensive context about the system
+    let mut system_context = String::new();
+    system_context.push_str(&format!("Operating System: {}\n", sys_info.os));
+    system_context.push_str(&format!("CPU: {}\n", sys_info.cpu));
+    system_context.push_str(&format!(
+        "Memory: {}/{}\n",
+        sys_info.free_memory, sys_info.total_memory
+    ));
+    system_context.push_str(&format!(
+        "Disk: {}/{}\n",
+        sys_info.free_disk, sys_info.total_disk
+    ));
+
+    if sys_info.is_kubernetes {
+        system_context.push_str("Environment: Kubernetes cluster\n");
+    }
+
+    if sys_info.container_runtime_available {
+        system_context.push_str("Container Runtime: Available\n");
+    }
+
+    // Create AI agent configuration
+    let agent_config = AIAgentConfig {
+        max_tool_calls,
+        pause_on_limit: true,
+        allow_user_continuation: true,
+        verbose_logging: config.output.verbose,
+    };
+
+    // Create and run the AI agent
+    let mut agent = ui_formatter.show_progress("Initializing AI agent", || async {
+        AIAgent::new(ai_provider, agent_config).await
+    }).await;
+
+    // Run the agent
+    let mut result = ui_formatter.show_progress("Running AI agent analysis", || async {
+        agent.run(problem_description, &system_context).await
+    }).await?;
+
+    // Handle the result and potential continuation
+    loop {
+        match result {
+            AIAgentResult::Success { final_analysis, tool_calls_used } => {
+                println!("\n🎯 Final Analysis (after {} tool calls):", tool_calls_used);
+                println!("{}", final_analysis);
+                
+                // Show conversation summary if verbose
+                if config.output.verbose {
+                    println!("\n📊 Conversation Summary:");
+                    println!("{}", agent.get_conversation_summary());
+                }
+                break;
+            }
+            AIAgentResult::PausedForUserInput { reason, tool_calls_used } => {
+                println!("\n⏸️  AI Agent paused after {} tool calls", tool_calls_used);
+                println!("Reason: {}", reason);
+                
+                print!("\nYour response (or 'quit' to exit): ");
+                std::io::Write::flush(&mut std::io::stdout())?;
+                
+                let mut user_input = String::new();
+                std::io::stdin().read_line(&mut user_input)?;
+                let user_input = user_input.trim();
+                
+                if user_input.to_lowercase() == "quit" {
+                    println!("Exiting AI agent mode.");
+                    break;
+                }
+                
+                // Continue with user input
+                result = agent.continue_with_input(user_input).await?;
+            }
+            AIAgentResult::LimitReached { partial_analysis, tool_calls_used } => {
+                println!("\n⚠️  Tool call limit reached after {} calls", tool_calls_used);
+                println!("Partial analysis: {}", partial_analysis);
+                
+                print!("\nContinue with {} more tool calls? (y/n): ", max_tool_calls);
+                std::io::Write::flush(&mut std::io::stdout())?;
+                
+                let mut user_input = String::new();
+                std::io::stdin().read_line(&mut user_input)?;
+                
+                if user_input.trim().to_lowercase().starts_with('y') {
+                    println!("Continuing with {} more tool calls...", max_tool_calls);
+                    result = agent.continue_after_limit().await?;
+                } else {
+                    println!("Stopping analysis. Final state:");
+                    println!("{}", partial_analysis);
+                    break;
+                }
+            }
+            AIAgentResult::Error { error, tool_calls_used } => {
+                println!("\n❌ AI Agent error after {} tool calls: {}", tool_calls_used, error);
+                break;
+            }
+        }
+    }
 
     Ok(())
 }

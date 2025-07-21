@@ -351,3 +351,148 @@ cargo run -- --ai-api-key your_key --ai-base-url https://your-endpoint.com check
 ## License
 
 MIT License - see LICENSE file for details. 
+
+## AI Agent Mode (New!)
+
+RAID now supports an advanced **AI Agent Mode** that allows the AI to iteratively call diagnostic tools and make multiple rounds of analysis to solve complex problems.
+
+### Key Features
+
+- **Iterative Problem Solving**: The AI can call multiple diagnostic tools in sequence
+- **Configurable Tool Limits**: Set maximum number of tool calls (default: 50)
+- **Pause and Continue**: AI can pause to ask for user clarification
+- **Interactive Sessions**: Continue analysis after hitting limits
+- **Comprehensive Logging**: Track all tool calls and decisions
+
+### Usage
+
+#### Basic AI Agent Mode
+
+```bash
+# Enable AI agent mode for complex problem solving
+cargo run -- "my pod is stuck in crash loop backoff" --ai-agent-mode
+
+# With custom tool call limit
+cargo run -- "system is running slow" --ai-agent-mode --ai-max-tool-calls 100
+
+# With specific AI provider
+cargo run -- "kubernetes deployment failing" --ai-agent-mode --ai-provider anthropic
+```
+
+#### Example Session
+
+```
+🤖 AI Agent Mode - Iterative Problem Solving
+Problem: my pod is stuck in crash loop backoff
+Max tool calls: 50
+Starting analysis...
+
+🔄 AI Agent is calling diagnostic tools...
+
+🔧 Tool 1/50: kubectl_get_pods --namespace default
+✅ Found pod in CrashLoopBackOff state
+
+🔧 Tool 2/50: kubectl_describe_pod my-pod --namespace default
+✅ Found exit code 1, checking logs...
+
+🔧 Tool 3/50: kubectl_logs my-pod --namespace default --lines 50
+✅ Found connection refused error
+
+🔧 Tool 4/50: kubectl_get_services --namespace default
+✅ Service configuration looks correct
+
+🎯 Final Analysis (after 4 tool calls):
+The pod is failing because it cannot connect to the database service. 
+The connection is being refused, indicating either:
+1. Database service is not running
+2. Wrong service name in pod configuration
+3. Network policy blocking connection
+
+Recommended next steps:
+- Check if database pod is running: kubectl get pods | grep database
+- Verify service endpoints: kubectl get endpoints
+- Check pod environment variables for correct service names
+```
+
+#### Interactive Features
+
+When the AI needs more information:
+```
+⏸️  AI Agent paused after 15 tool calls
+Reason: I need more information about your database configuration.
+
+Your response (or 'quit' to exit): The database is running in namespace "database"
+
+🔄 Continuing analysis with additional context...
+```
+
+When hitting tool call limits:
+```
+⚠️  Tool call limit reached after 50 calls
+Partial analysis: Found multiple potential issues with networking configuration...
+
+Continue with 50 more tool calls? (y/n): y
+Continuing with 50 more tool calls...
+```
+
+### Configuration Options
+
+| Option | Environment Variable | Default | Description |
+|--------|---------------------|---------|-------------|
+| `--ai-agent-mode` | - | false | Enable iterative AI agent mode |
+| `--ai-max-tool-calls` | `AI_MAX_TOOL_CALLS` | 50 | Maximum tool calls per session |
+| `--ai-provider` | `AI_PROVIDER` | openai | AI provider (openai, anthropic, local) |
+| `--ai-api-key` | `AI_API_KEY` | - | API key for AI provider |
+| `--ai-model` | `AI_MODEL` | auto | Specific model to use |
+
+### Comparison: Standard vs Agent Mode
+
+| Feature | Standard Mode | AI Agent Mode |
+|---------|---------------|---------------|
+| Tool calls | Single analysis | Multiple iterative calls |
+| Interaction | One-shot | Interactive with pauses |
+| Problem solving | Basic | Advanced multi-step |
+| Tool selection | Pre-defined | AI-driven selection |
+| Continuation | No | Yes, after limits/questions |
+
+### Best Use Cases
+
+**Standard Mode** is best for:
+- Quick system health checks
+- Simple diagnostic questions
+- Automated health monitoring
+- Batch processing
+
+**AI Agent Mode** is best for:
+- Complex troubleshooting scenarios
+- Multi-component system issues
+- Interactive debugging sessions
+- Learning system investigation techniques
+
+### Environment Variables
+
+Set these for consistent AI agent behavior:
+
+```bash
+export AI_PROVIDER=anthropic
+export AI_API_KEY=your-api-key-here
+export AI_MAX_TOOL_CALLS=75
+export AI_MODEL=claude-3-5-sonnet-20241022
+```
+
+### Advanced Examples
+
+**Kubernetes Troubleshooting**:
+```bash
+cargo run -- "deployment is failing with ImagePullBackOff" --ai-agent-mode --ai-max-tool-calls 30
+```
+
+**Performance Investigation**:
+```bash
+cargo run -- "system is slow and users are complaining" --ai-agent-mode --verbose
+```
+
+**Network Debugging**:
+```bash
+cargo run -- "pods cannot reach external services" --ai-agent-mode --ai-provider anthropic
+``` 

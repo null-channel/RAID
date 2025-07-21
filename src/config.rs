@@ -476,7 +476,7 @@ database:
         
         // Create a mock CLI with overrides
         use crate::cli::Cli;
-        use clap::Parser;
+
         
         // Test CLI overrides
         let cli = Cli {
@@ -487,6 +487,8 @@ database:
             ai_base_url: Some("https://custom.api".to_string()),
             ai_max_tokens: Some(1500),
             ai_temperature: Some(0.8),
+            ai_max_tool_calls: 75,
+            ai_agent_mode: true,
             dry_run: false,
             verbose: true,
             output_format: OutputFormat::Yaml,

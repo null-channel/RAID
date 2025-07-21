@@ -43,6 +43,14 @@ pub struct Cli {
     #[arg(long, env = "AI_TEMPERATURE")]
     pub ai_temperature: Option<f32>,
 
+    /// Maximum tool calls for AI agent mode (default: 50)
+    #[arg(long, env = "AI_MAX_TOOL_CALLS", default_value = "50")]
+    pub ai_max_tool_calls: usize,
+
+    /// Enable iterative AI agent mode (multiple rounds of tool calls)
+    #[arg(long)]
+    pub ai_agent_mode: bool,
+
     /// Run without AI analysis (just collect and display system info)
     #[arg(long)]
     pub dry_run: bool,
