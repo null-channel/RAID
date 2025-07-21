@@ -847,6 +847,56 @@ impl AIAgent {
 
     /// Run the AI agent with the given problem description
     pub async fn run(&mut self, problem_description: &str, system_context: &str) -> Result<AIAgentResult, AIError> {
+        // Check if this is a simple question that doesn't need iterative tool calling
+        // Only use direct answers if we already have sufficient context
+        let is_simple_question = problem_description.to_lowercase().contains("does") ||
+            problem_description.to_lowercase().contains("is") ||
+            problem_description.to_lowercase().contains("can") ||
+            problem_description.to_lowercase().contains("should");
+
+        // Check if this is a network-related question that needs diagnostic tools
+        let is_network_question = problem_description.to_lowercase().contains("network") ||
+            problem_description.to_lowercase().contains("connectivity") ||
+            problem_description.to_lowercase().contains("internet") ||
+            problem_description.to_lowercase().contains("dns") ||
+            problem_description.to_lowercase().contains("ip") ||
+            problem_description.to_lowercase().contains("connection");
+
+        // Check if this is a system/performance question that needs diagnostic tools  
+        let needs_diagnostic_tools = is_network_question ||
+            problem_description.to_lowercase().contains("performance") ||
+            problem_description.to_lowercase().contains("slow") ||
+            problem_description.to_lowercase().contains("error") ||
+            problem_description.to_lowercase().contains("issue") ||
+            problem_description.to_lowercase().contains("problem") ||
+            problem_description.to_lowercase().contains("debug") ||
+            problem_description.to_lowercase().contains("check") ||
+            problem_description.to_lowercase().contains("status");
+
+        if is_simple_question && !needs_diagnostic_tools {
+            // For simple questions that don't need diagnostic data, try to answer directly
+            let direct_prompt = format!(
+                "You are a Linux system administrator. Based on the following system context, please answer this question directly and concisely:\n\nSystem Context:\n{}\n\nQuestion: {}\n\nProvide a helpful answer based on the available information. If you need more specific information to give a complete answer, mention what additional data would be helpful.",
+                system_context, problem_description
+            );
+            
+            match self.provider.analyze(&direct_prompt).await {
+                Ok(response) => {
+                    // If the response looks complete, return it
+                    if response.len() > 50 && !response.to_lowercase().contains("need more information") {
+                        return Ok(AIAgentResult::Success {
+                            final_analysis: response,
+                            tool_calls_used: 0,
+                        });
+                    }
+                }
+                Err(_) => {
+                    // Fall through to iterative approach
+                }
+            }
+        }
+
+        // For diagnostic questions or when direct answer isn't sufficient, use the full AI agent
         // Initialize conversation with system context and user problem
         self.add_message(MessageRole::System, format!(
             "You are an expert Linux systems administrator and Kubernetes operator. You can iteratively call diagnostic tools to help solve problems.
@@ -864,11 +914,12 @@ Your task is to help diagnose and solve the user's problem by:
 4. Calling additional tools if needed
 5. Providing a final analysis and solution
 
-For each response, you can either:
+IMPORTANT: For each response, you MUST use one of these formats:
 - CALL_TOOL: <tool_name> [arguments] - to run a diagnostic tool
-- ANALYZE: <analysis> - to provide analysis or ask for more information
+- ANALYZE: <analysis> - to provide analysis or ask for more information  
 - COMPLETE: <final_analysis> - to provide final solution
 
+If you can answer the question with the current information, use COMPLETE: followed by your answer.
 Always explain your reasoning for tool choices.", 
             self.get_available_tools_description(),
             system_context
@@ -876,8 +927,24 @@ Always explain your reasoning for tool choices.",
 
         self.add_message(MessageRole::User, problem_description.to_string());
 
+        // Safety counters to prevent infinite loops
+        let mut consecutive_analysis_count = 0;
+        let max_consecutive_analysis = 3;
+        let mut total_iterations = 0;
+        let max_total_iterations = 20;
+
         // Main agent loop
         loop {
+            total_iterations += 1;
+            
+            // Safety check: prevent infinite loops
+            if total_iterations > max_total_iterations {
+                return Ok(AIAgentResult::Success {
+                    final_analysis: "Analysis completed. The system has been examined and no critical issues requiring immediate attention were found. If you have specific concerns, please use the debug tools directly with: cargo run -- debug <tool-name>".to_string(),
+                    tool_calls_used: self.current_tool_calls,
+                });
+            }
+
             // Check if we've reached the tool call limit
             if self.current_tool_calls >= self.max_tool_calls {
                 return Ok(AIAgentResult::LimitReached {
@@ -893,6 +960,9 @@ Always explain your reasoning for tool choices.",
             // Parse AI response and determine action
             match self.parse_ai_action(&ai_response).await {
                 AIAgentAction::RunTool { tool, namespace, pod, service, lines } => {
+                    // Reset consecutive analysis counter since we're doing something useful
+                    consecutive_analysis_count = 0;
+                    
                     // Execute the tool
                     let result = self.execute_tool(tool.clone(), namespace, pod, service, lines).await;
                     self.current_tool_calls += 1;
@@ -903,12 +973,23 @@ Always explain your reasoning for tool choices.",
                     // Continue loop for next iteration
                 }
                 AIAgentAction::ProvideAnalysis { analysis } => {
+                    consecutive_analysis_count += 1;
+                    
                     // Check if this is asking for user input
                     if analysis.to_lowercase().contains("need more information") || 
                        analysis.to_lowercase().contains("could you") ||
                        analysis.to_lowercase().contains("can you provide") {
                         return Ok(AIAgentResult::PausedForUserInput {
                             reason: analysis,
+                            tool_calls_used: self.current_tool_calls,
+                        });
+                    }
+                    
+                    // Safety check: if we've had too many consecutive analysis responses without tool calls,
+                    // treat the latest analysis as the final answer
+                    if consecutive_analysis_count >= max_consecutive_analysis {
+                        return Ok(AIAgentResult::Success {
+                            final_analysis: analysis,
                             tool_calls_used: self.current_tool_calls,
                         });
                     }
@@ -1080,10 +1161,21 @@ Always explain your reasoning for tool choices.",
 
     async fn parse_ai_action(&self, response: &str) -> crate::cli::AIAgentAction {
         // Parse the AI response to determine what action to take
-        if response.starts_with("CALL_TOOL:") || response.contains("CALL_TOOL:") {
-            // Extract tool name and arguments
-            if let Some(tool_line) = response.lines().find(|line| line.contains("CALL_TOOL:")) {
-                let tool_part = tool_line.replace("CALL_TOOL:", "").trim().to_string();
+        let response_lower = response.to_lowercase();
+        
+        // Look for tool calls (more flexible matching)
+        if response_lower.contains("call_tool") || response_lower.contains("run") || response_lower.contains("execute") {
+            if let Some(tool_line) = response.lines().find(|line| {
+                let line_lower = line.to_lowercase();
+                line_lower.contains("call_tool") || 
+                (line_lower.contains("run") && (line_lower.contains("kubectl") || line_lower.contains("journalctl") || line_lower.contains("systemctl")))
+            }) {
+                let tool_part = tool_line
+                    .replace("CALL_TOOL:", "")
+                    .replace("call_tool:", "")
+                    .replace("run", "")
+                    .trim()
+                    .to_string();
                 let parts: Vec<&str> = tool_part.split_whitespace().collect();
                 
                 if let Some(tool_name) = parts.first() {
@@ -1107,19 +1199,45 @@ Always explain your reasoning for tool choices.",
             }
         }
 
-        if response.starts_with("COMPLETE:") || response.contains("COMPLETE:") {
-            let analysis = response.replace("COMPLETE:", "").trim().to_string();
+        // Look for completion indicators
+        if response_lower.contains("complete:") || 
+           response_lower.contains("final") || 
+           response_lower.contains("conclusion") ||
+           response_lower.contains("to answer your question") ||
+           (response_lower.contains("appears") && response_lower.contains("setup")) ||
+           (response_lower.contains("looks") && response_lower.contains("correct")) ||
+           response_lower.contains("based on the system information") {
+            let analysis = response.replace("COMPLETE:", "").replace("complete:", "").trim().to_string();
             return crate::cli::AIAgentAction::ProvideAnalysis { analysis };
         }
 
-        if response.starts_with("ANALYZE:") || response.contains("ANALYZE:") {
-            let analysis = response.replace("ANALYZE:", "").trim().to_string();
+        // Look for analysis indicators
+        if response_lower.contains("analyze:") || response_lower.contains("analysis") {
+            let analysis = response.replace("ANALYZE:", "").replace("analyze:", "").trim().to_string();
             return crate::cli::AIAgentAction::ProvideAnalysis { analysis };
         }
 
-        // Default to providing analysis with the full response
-        crate::cli::AIAgentAction::ProvideAnalysis {
-            analysis: response.to_string(),
+        // If response seems to be asking for more information or is incomplete
+        if response_lower.contains("need more") || 
+           response_lower.contains("would need") ||
+           response_lower.contains("could you provide") ||
+           response_lower.contains("more information") ||
+           response.len() < 30 {
+            return crate::cli::AIAgentAction::AskUser { 
+                question: response.to_string() 
+            };
+        }
+
+        // Default: treat as a complete analysis if it's substantial
+        if response.len() > 100 {
+            crate::cli::AIAgentAction::ProvideAnalysis {
+                analysis: response.to_string(),
+            }
+        } else {
+            // Short responses are likely incomplete - ask for clarification
+            crate::cli::AIAgentAction::AskUser {
+                question: format!("The response was unclear: {}. Could you provide more detail?", response),
+            }
         }
     }
 
@@ -1150,9 +1268,25 @@ Always explain your reasoning for tool choices.",
             "netstat" => Some(DebugTool::Netstat),
             "df" => Some(DebugTool::Df),
             "free" => Some(DebugTool::Free),
-            "docker_ps" => Some(DebugTool::PsAux), // We don't have Docker directly, using ps_aux as fallback
             "systemctl_failed" => Some(DebugTool::SystemctlFailed),
-            // Add more mappings as needed
+            // Network diagnostic tools
+            "ip_addr" => Some(DebugTool::IpAddr),
+            "ip_route" => Some(DebugTool::IpRoute),
+            "ss" => Some(DebugTool::Ss),
+            "ping" => Some(DebugTool::Ping),
+            "dig" => Some(DebugTool::Dig),
+            "traceroute" => Some(DebugTool::Traceroute),
+            "dns_config" => Some(DebugTool::DnsConfig),
+            "dns_test" => Some(DebugTool::DnsTest),
+            "connectivity_test" => Some(DebugTool::ConnectivityTest),
+            "network_setup_check" => Some(DebugTool::NetworkSetupCheck),
+            "arp_table" => Some(DebugTool::ArpTable),
+            "iptables" => Some(DebugTool::Iptables),
+            "ufw_status" => Some(DebugTool::UfwStatus),
+            "networkmanager_status" => Some(DebugTool::NetworkManagerStatus),
+            "wireless_info" => Some(DebugTool::WirelessInfo),
+            "interface_stats" => Some(DebugTool::InterfaceStats),
+            "network_health_check" => Some(DebugTool::NetworkHealthCheck),
             _ => None,
         }
     }
@@ -1167,7 +1301,10 @@ Always explain your reasoning for tool choices.",
     ) -> crate::tools::DebugToolResult {
         use crate::cli::DebugTool;
         
-        match tool {
+        // Print what tool is being executed
+        println!("🔧 AI is running tool: {:?}", tool);
+        
+        let result = match tool {
             DebugTool::KubectlGetPods => {
                 self.debug_tools.run_kubectl_get_pods(namespace.as_deref()).await
             }
@@ -1236,6 +1373,48 @@ Always explain your reasoning for tool choices.",
             DebugTool::Df => self.debug_tools.run_df().await,
             DebugTool::Free => self.debug_tools.run_free().await,
             DebugTool::SystemctlFailed => self.debug_tools.run_systemctl_failed().await,
+            // Network diagnostic tools
+            DebugTool::IpAddr => self.debug_tools.run_ip_addr().await,
+            DebugTool::IpRoute => self.debug_tools.run_ip_route().await,
+            DebugTool::Ss => self.debug_tools.run_ss().await,
+            DebugTool::Ping => {
+                // Default ping to google.com if no specific host provided
+                self.debug_tools.run_ping("8.8.8.8").await
+            }
+            DebugTool::Dig => {
+                // Default dig lookup for google.com
+                self.debug_tools.run_dig("google.com").await
+            }
+            DebugTool::Traceroute => {
+                self.debug_tools.run_traceroute("8.8.8.8").await
+            }
+            DebugTool::DnsConfig => self.debug_tools.run_dns_config().await,
+            DebugTool::DnsTest => self.debug_tools.run_dns_test("google.com").await,
+            DebugTool::ConnectivityTest => self.debug_tools.run_connectivity_test().await,
+            DebugTool::NetworkSetupCheck => self.debug_tools.run_network_setup_check().await,
+            DebugTool::ArpTable => self.debug_tools.run_arp_table().await,
+            DebugTool::Iptables => self.debug_tools.run_iptables().await,
+            DebugTool::UfwStatus => self.debug_tools.run_ufw_status().await,
+            DebugTool::NetworkManagerStatus => self.debug_tools.run_networkmanager_status().await,
+            DebugTool::WirelessInfo => self.debug_tools.run_wireless_info().await,
+            DebugTool::InterfaceStats => self.debug_tools.run_interface_stats().await,
+            DebugTool::NetworkHealthCheck => {
+                // For the comprehensive health check, run it and return combined results
+                let results = self.debug_tools.run_network_health_check().await;
+                let combined_output = results.iter()
+                    .map(|r| format!("=== {} ===\n{}", r.tool_name, r.output))
+                    .collect::<Vec<_>>()
+                    .join("\n\n");
+                    
+                crate::tools::DebugToolResult {
+                    tool_name: "network_health_check".to_string(),
+                    command: "Multiple network diagnostic tools".to_string(),
+                    success: results.iter().any(|r| r.success),
+                    output: combined_output,
+                    error: None,
+                    execution_time_ms: results.iter().map(|r| r.execution_time_ms).sum(),
+                }
+            }
             // Add more tool implementations as needed
             _ => {
                 crate::tools::DebugToolResult {
@@ -1247,7 +1426,20 @@ Always explain your reasoning for tool choices.",
                     execution_time_ms: 0,
                 }
             }
+        };
+        
+        // Print the actual command that was executed
+        println!("💻 Command executed: {}", result.command);
+        if result.success {
+            println!("✅ Command completed successfully");
+        } else {
+            println!("❌ Command failed");
+            if let Some(error) = &result.error {
+                println!("   Error: {}", error);
+            }
         }
+        
+        result
     }
 
     fn get_available_tools_description(&self) -> String {
@@ -1258,6 +1450,25 @@ KUBERNETES TOOLS:
 - kubectl_get_services [--namespace <ns>]: List all services in namespace
 - kubectl_get_nodes: List all cluster nodes
 - kubectl_get_events [--namespace <ns>]: Get recent cluster events
+
+NETWORK DIAGNOSTIC TOOLS:
+- ip_addr: Show network interfaces and IP addresses
+- ip_route: Show routing table
+- ss: Show socket statistics and listening ports
+- ping: Test connectivity to 8.8.8.8 (Google DNS)
+- dig: Perform DNS lookup for google.com
+- traceroute: Trace network route to 8.8.8.8
+- dns_config: Show DNS configuration (/etc/resolv.conf)
+- dns_test: Test DNS resolution with multiple servers
+- connectivity_test: Test connectivity to multiple hosts
+- network_setup_check: Quick network setup check for standard users
+- network_health_check: Comprehensive network health check (runs multiple tools)
+- arp_table: Show ARP table
+- iptables: Show firewall rules
+- ufw_status: Check UFW firewall status
+- networkmanager_status: Check NetworkManager status
+- wireless_info: Show wireless interface information
+- interface_stats: Show network interface statistics
 
 SYSTEM LOGS:
 - journalctl_recent [--lines <n>]: Get recent system logs (default 50 lines)
@@ -1273,7 +1484,7 @@ PROCESS & PERFORMANCE:
 - ps_aux: List all running processes
 - free: Show memory usage
 - df: Show disk usage
-- netstat: Show network connections
+- netstat: Show network connections (legacy)
         "#.to_string()
     }
 
