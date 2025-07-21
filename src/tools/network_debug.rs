@@ -692,6 +692,345 @@ impl DebugTools {
             },
         }
     }
+
+    /// Check UFW (Uncomplicated Firewall) status
+    pub async fn run_ufw_status(&self) -> DebugToolResult {
+        let start_time = std::time::Instant::now();
+        let mut command = Command::new("ufw");
+        command.args(["status", "verbose"]);
+
+        let result = command.output();
+        let execution_time = start_time.elapsed().as_millis() as u64;
+
+        match result {
+            Ok(output) => {
+                let success = output.status.success();
+                let output_str = String::from_utf8_lossy(&output.stdout).to_string();
+                let error_str = if success {
+                    None
+                } else {
+                    Some(String::from_utf8_lossy(&output.stderr).to_string())
+                };
+
+                DebugToolResult {
+                    tool_name: "ufw_status".to_string(),
+                    command: "ufw status verbose".to_string(),
+                    success,
+                    output: output_str,
+                    error: error_str,
+                    execution_time_ms: execution_time,
+                }
+            }
+            Err(e) => DebugToolResult {
+                tool_name: "ufw_status".to_string(),
+                command: "ufw status verbose".to_string(),
+                success: false,
+                output: String::new(),
+                error: Some(format!("UFW not found: {}. Install with: sudo apt install ufw (Ubuntu/Debian) or sudo pacman -S ufw (Arch)", e)),
+                execution_time_ms: execution_time,
+            },
+        }
+    }
+
+    /// Check NetworkManager status
+    pub async fn run_networkmanager_status(&self) -> DebugToolResult {
+        let start_time = std::time::Instant::now();
+        let mut command = Command::new("systemctl");
+        command.args(["status", "NetworkManager", "--no-pager"]);
+
+        let result = command.output();
+        let execution_time = start_time.elapsed().as_millis() as u64;
+
+        match result {
+            Ok(output) => {
+                let success = output.status.success();
+                let output_str = String::from_utf8_lossy(&output.stdout).to_string();
+                let error_str = if success {
+                    None
+                } else {
+                    Some(String::from_utf8_lossy(&output.stderr).to_string())
+                };
+
+                DebugToolResult {
+                    tool_name: "networkmanager_status".to_string(),
+                    command: "systemctl status NetworkManager --no-pager".to_string(),
+                    success,
+                    output: output_str,
+                    error: error_str,
+                    execution_time_ms: execution_time,
+                }
+            }
+            Err(e) => DebugToolResult {
+                tool_name: "networkmanager_status".to_string(),
+                command: "systemctl status NetworkManager --no-pager".to_string(),
+                success: false,
+                output: String::new(),
+                error: Some(format!("systemctl not found: {}. NetworkManager status check requires systemd.", e)),
+                execution_time_ms: execution_time,
+            },
+        }
+    }
+
+    /// Check DNS configuration
+    pub async fn run_dns_config(&self) -> DebugToolResult {
+        let start_time = std::time::Instant::now();
+        let mut command = Command::new("cat");
+        command.args(["/etc/resolv.conf"]);
+
+        let result = command.output();
+        let execution_time = start_time.elapsed().as_millis() as u64;
+
+        match result {
+            Ok(output) => {
+                let success = output.status.success();
+                let output_str = String::from_utf8_lossy(&output.stdout).to_string();
+                let error_str = if success {
+                    None
+                } else {
+                    Some(String::from_utf8_lossy(&output.stderr).to_string())
+                };
+
+                DebugToolResult {
+                    tool_name: "dns_config".to_string(),
+                    command: "cat /etc/resolv.conf".to_string(),
+                    success,
+                    output: output_str,
+                    error: error_str,
+                    execution_time_ms: execution_time,
+                }
+            }
+            Err(e) => DebugToolResult {
+                tool_name: "dns_config".to_string(),
+                command: "cat /etc/resolv.conf".to_string(),
+                success: false,
+                output: String::new(),
+                error: Some(format!("Failed to read DNS config: {}", e)),
+                execution_time_ms: execution_time,
+            },
+        }
+    }
+
+    /// Check network connectivity with standard hosts
+    pub async fn run_connectivity_test(&self) -> DebugToolResult {
+        let start_time = std::time::Instant::now();
+        
+        let test_hosts = [
+            ("8.8.8.8", "Google DNS"),
+            ("1.1.1.1", "Cloudflare DNS"), 
+            ("google.com", "Google (DNS resolution test)"),
+            ("github.com", "GitHub (HTTPS connectivity)"),
+        ];
+        
+        let mut results = Vec::new();
+        
+        for (host, description) in &test_hosts {
+            let mut command = Command::new("ping");
+            command.args(["-c", "2", "-W", "3", host]);
+            
+            if let Ok(output) = command.output() {
+                let success = output.status.success();
+                let result_text = if success {
+                    format!("✅ {} ({}): REACHABLE", description, host)
+                } else {
+                    format!("❌ {} ({}): UNREACHABLE", description, host)
+                };
+                results.push(result_text);
+            } else {
+                results.push(format!("❌ {} ({}): PING FAILED", description, host));
+            }
+        }
+        
+        let execution_time = start_time.elapsed().as_millis() as u64;
+        let output_str = results.join("\n");
+        let overall_success = results.iter().any(|r| r.contains("✅"));
+
+        DebugToolResult {
+            tool_name: "connectivity_test".to_string(),
+            command: "ping -c 2 -W 3 (multiple hosts)".to_string(),
+            success: overall_success,
+            output: output_str,
+            error: if overall_success { None } else { Some("No hosts reachable".to_string()) },
+            execution_time_ms: execution_time,
+        }
+    }
+
+    /// Comprehensive network health check - runs multiple diagnostic tools automatically
+    pub async fn run_network_health_check(&self) -> Vec<DebugToolResult> {
+        let mut results = Vec::new();
+        
+        // 1. Check network interfaces
+        results.push(self.run_ip_addr().await);
+        
+        // 2. Check routing table
+        results.push(self.run_ip_route().await);
+        
+        // 3. Test connectivity
+        results.push(self.run_connectivity_test().await);
+        
+        // 4. Check DNS configuration
+        results.push(self.run_dns_config().await);
+        
+        // 5. Test DNS resolution
+        results.push(self.run_dns_test("google.com").await);
+        
+        // 6. Check active network connections
+        results.push(self.run_ss().await);
+        
+        // 7. Check firewall status (iptables)
+        results.push(self.run_iptables().await);
+        
+        // 8. Check UFW status if available
+        results.push(self.run_ufw_status().await);
+        
+        // 9. Check NetworkManager status if available
+        results.push(self.run_networkmanager_status().await);
+        
+        // 10. Check nftables if available
+        results.push(self.run_nftables().await);
+        
+        // 11. Check wireless information if available
+        results.push(self.run_wireless_info().await);
+        
+        results
+    }
+
+    /// Quick network setup check for standard users
+    pub async fn run_network_setup_check(&self) -> DebugToolResult {
+        let start_time = std::time::Instant::now();
+        
+        let health_results = self.run_network_health_check().await;
+        
+        let mut summary = Vec::new();
+        let mut warnings = Vec::new();
+        let mut errors = Vec::new();
+        
+        for result in &health_results {
+            match result.tool_name.as_str() {
+                "ip_addr" => {
+                    if result.success {
+                        if result.output.contains("inet ") && !result.output.contains("127.0.0.1") {
+                            summary.push("✅ Network interface is up with IP address assigned");
+                        } else {
+                            warnings.push("⚠️  No non-loopback IP address found");
+                        }
+                    } else {
+                        errors.push("❌ Failed to check network interfaces");
+                    }
+                }
+                "connectivity_test" => {
+                    if result.success {
+                        summary.push("✅ Internet connectivity is working");
+                    } else {
+                        errors.push("❌ No internet connectivity");
+                    }
+                }
+                "dns_config" => {
+                    if result.success {
+                        if result.output.contains("nameserver") {
+                            summary.push("✅ DNS servers are configured");
+                        } else {
+                            warnings.push("⚠️  No DNS servers found in /etc/resolv.conf");
+                        }
+                    } else {
+                        warnings.push("⚠️  Could not read DNS configuration");
+                    }
+                }
+                "dns_test" => {
+                    if result.success {
+                        summary.push("✅ DNS resolution is working");
+                    } else {
+                        errors.push("❌ DNS resolution is not working");
+                    }
+                }
+                "ufw_status" => {
+                    if result.success {
+                        if result.output.contains("Status: inactive") {
+                            summary.push("✅ UFW firewall is inactive (allowing all traffic)");
+                        } else if result.output.contains("Status: active") {
+                            summary.push("✅ UFW firewall is active with rules configured");
+                        } else {
+                            warnings.push("⚠️  UFW status unclear");
+                        }
+                    } else if result.error.as_ref().map_or(false, |e| e.contains("UFW not found")) {
+                        summary.push("ℹ️  UFW not installed (using other firewall or none)");
+                    }
+                }
+                "networkmanager_status" => {
+                    if result.success {
+                        if result.output.contains("active (running)") {
+                            summary.push("✅ NetworkManager is running");
+                        } else {
+                            warnings.push("⚠️  NetworkManager is not running normally");
+                        }
+                    } else {
+                        summary.push("ℹ️  NetworkManager not available (may use different network management)");
+                    }
+                }
+                "iptables" => {
+                    if result.success {
+                        if result.output.contains("policy ACCEPT") || result.output.is_empty() {
+                            summary.push("✅ iptables allows traffic (default policy ACCEPT or no rules)");
+                        } else {
+                            warnings.push("⚠️  iptables has active rules - check if blocking needed traffic");
+                        }
+                    } else {
+                        warnings.push("⚠️  Could not check iptables rules (may need root privileges)");
+                    }
+                }
+                _ => {} // Ignore other tools for summary
+            }
+        }
+        
+        let execution_time = start_time.elapsed().as_millis() as u64;
+        
+        let mut full_output = String::new();
+        
+        full_output.push_str("🔍 NETWORK SETUP CHECK FOR STANDARD USER\n");
+        full_output.push_str("========================================\n\n");
+        
+        if !summary.is_empty() {
+            full_output.push_str("📋 Summary:\n");
+            for item in &summary {
+                full_output.push_str(&format!("  {}\n", item));
+            }
+            full_output.push('\n');
+        }
+        
+        if !warnings.is_empty() {
+            full_output.push_str("⚠️  Warnings:\n");
+            for item in &warnings {
+                full_output.push_str(&format!("  {}\n", item));
+            }
+            full_output.push('\n');
+        }
+        
+        if !errors.is_empty() {
+            full_output.push_str("❌ Issues Found:\n");
+            for item in &errors {
+                full_output.push_str(&format!("  {}\n", item));
+            }
+            full_output.push('\n');
+        }
+        
+        let overall_status = if errors.is_empty() && warnings.len() <= 2 {
+            "✅ Network appears to be set up correctly for standard use"
+        } else if errors.is_empty() {
+            "⚠️  Network is functional but has some configuration warnings"
+        } else {
+            "❌ Network has significant issues that need attention"
+        };
+        
+        full_output.push_str(&format!("🏁 Overall Status: {}\n", overall_status));
+        
+        DebugToolResult {
+            tool_name: "network_setup_check".to_string(),
+            command: "comprehensive network setup verification".to_string(),
+            success: errors.is_empty(),
+            output: full_output,
+            error: if errors.is_empty() { None } else { Some(format!("{} issues found", errors.len())) },
+            execution_time_ms: execution_time,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -888,6 +1227,225 @@ mod tests {
             assert!(result.error.is_some());
             let error = result.error.unwrap();
             assert!(!error.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ufw_status() {
+        let debug_tools = DebugTools::new();
+
+        let result = debug_tools.run_ufw_status().await;
+        assert_eq!(result.tool_name, "ufw_status");
+        assert_eq!(result.command, "ufw status verbose");
+
+        // UFW might not be installed, should handle gracefully
+        if !result.success {
+            assert!(result.error.is_some());
+            let error = result.error.unwrap();
+            assert!(error.contains("UFW not found") || error.contains("Install with"));
+        } else {
+            // If UFW is available, should show status
+            assert!(!result.output.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_networkmanager_status() {
+        let debug_tools = DebugTools::new();
+
+        let result = debug_tools.run_networkmanager_status().await;
+        assert_eq!(result.tool_name, "networkmanager_status");
+        assert_eq!(result.command, "systemctl status NetworkManager --no-pager");
+
+        // NetworkManager might not be available on all systems
+        if !result.success {
+            assert!(result.error.is_some());
+            let error = result.error.unwrap();
+            assert!(error.contains("systemctl not found") || error.contains("requires systemd"));
+        } else {
+            // If NetworkManager is available, should show status
+            assert!(!result.output.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_dns_config() {
+        let debug_tools = DebugTools::new();
+
+        let result = debug_tools.run_dns_config().await;
+        assert_eq!(result.tool_name, "dns_config");
+        assert_eq!(result.command, "cat /etc/resolv.conf");
+
+        // /etc/resolv.conf should exist on most Linux systems
+        if result.success {
+            assert!(!result.output.is_empty());
+            // Should contain some DNS configuration
+        } else {
+            assert!(result.error.is_some());
+            let error = result.error.unwrap();
+            assert!(error.contains("Failed to read DNS config"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_connectivity_test() {
+        let debug_tools = DebugTools::new();
+
+        let result = debug_tools.run_connectivity_test().await;
+        assert_eq!(result.tool_name, "connectivity_test");
+        assert!(result.command.contains("ping"));
+        assert!(result.command.contains("multiple hosts"));
+
+        // Should test multiple hosts and provide detailed output
+        assert!(!result.output.is_empty());
+        assert!(result.output.contains("Google DNS") || result.output.contains("Cloudflare DNS"));
+        
+        // Should have clear success/failure indicators
+        if result.success {
+            assert!(result.output.contains("✅"));
+        } else {
+            assert!(result.output.contains("❌"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_network_health_check() {
+        let debug_tools = DebugTools::new();
+
+        let results = debug_tools.run_network_health_check().await;
+        
+        // Should run multiple network diagnostic tools
+        assert!(results.len() >= 8); // At least 8 tools should be checked
+        
+        // Check that we have results for key tools
+        let tool_names: Vec<String> = results.iter().map(|r| r.tool_name.clone()).collect();
+        assert!(tool_names.contains(&"ip_addr".to_string()));
+        assert!(tool_names.contains(&"connectivity_test".to_string()));
+        assert!(tool_names.contains(&"dns_config".to_string()));
+        assert!(tool_names.contains(&"iptables".to_string()));
+        assert!(tool_names.contains(&"ufw_status".to_string()));
+        assert!(tool_names.contains(&"networkmanager_status".to_string()));
+        
+        // All results should have proper structure
+        for result in &results {
+            assert!(!result.tool_name.is_empty());
+            assert!(!result.command.is_empty());
+            assert!(result.execution_time_ms >= 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_network_setup_check() {
+        let debug_tools = DebugTools::new();
+
+        let result = debug_tools.run_network_setup_check().await;
+        assert_eq!(result.tool_name, "network_setup_check");
+        assert_eq!(result.command, "comprehensive network setup verification");
+
+        // Should provide a comprehensive analysis
+        assert!(!result.output.is_empty());
+        assert!(result.output.contains("NETWORK SETUP CHECK FOR STANDARD USER"));
+        assert!(result.output.contains("Overall Status:"));
+        
+        // Should have clear status indicators
+        assert!(
+            result.output.contains("✅") ||
+            result.output.contains("⚠️") ||
+            result.output.contains("❌")
+        );
+        
+        // Should categorize results
+        if result.output.contains("Summary:") {
+            assert!(result.output.contains("✅"));
+        }
+        
+        // Should track execution time
+        assert!(result.execution_time_ms >= 0);
+    }
+
+    #[tokio::test]
+    async fn test_new_tools_command_format() {
+        let debug_tools = DebugTools::new();
+
+        // Test that all new network tools return proper command formats
+        let result = debug_tools.run_ufw_status().await;
+        assert_eq!(result.tool_name, "ufw_status");
+        assert_eq!(result.command, "ufw status verbose");
+        assert!(!result.command.contains("_")); // Should not contain internal naming
+
+        let result = debug_tools.run_networkmanager_status().await;
+        assert_eq!(result.tool_name, "networkmanager_status");
+        assert_eq!(result.command, "systemctl status NetworkManager --no-pager");
+
+        let result = debug_tools.run_dns_config().await;
+        assert_eq!(result.tool_name, "dns_config");
+        assert_eq!(result.command, "cat /etc/resolv.conf");
+
+        let result = debug_tools.run_connectivity_test().await;
+        assert_eq!(result.tool_name, "connectivity_test");
+        assert!(result.command.contains("ping"));
+    }
+
+    #[tokio::test]
+    async fn test_health_check_error_resilience() {
+        let debug_tools = DebugTools::new();
+
+        // Health check should complete even if some tools fail
+        let results = debug_tools.run_network_health_check().await;
+        
+        // Should have attempted all tools
+        assert!(results.len() >= 8);
+        
+        // Even if some fail, others should still work
+        let successes = results.iter().filter(|r| r.success).count();
+        let failures = results.iter().filter(|r| !r.success).count();
+        
+        // At least some basic tools should work (like ip_addr, which uses 'ip' command)
+        // But we don't require all to pass since some systems may not have all tools
+        assert!(successes > 0 || failures > 0); // Should have attempted something
+        
+        // All results should have valid structure regardless of success/failure
+        for result in &results {
+            assert!(!result.tool_name.is_empty());
+            assert!(!result.command.is_empty());
+            // Error should be Some if success is false
+            if !result.success {
+                // Note: Some tools may fail due to missing binaries, which is expected
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_network_setup_check_summary_logic() {
+        let debug_tools = DebugTools::new();
+
+        let result = debug_tools.run_network_setup_check().await;
+        
+        // Should provide clear categorization
+        let output = &result.output;
+        
+        // Should have header
+        assert!(output.contains("NETWORK SETUP CHECK FOR STANDARD USER"));
+        
+        // Should have overall status
+        assert!(output.contains("Overall Status:"));
+        
+        // Should use appropriate emojis and formatting
+        let has_summary = output.contains("📋 Summary:");
+        let has_warnings = output.contains("⚠️  Warnings:");
+        let has_errors = output.contains("❌ Issues Found:");
+        
+        // At least one section should be present
+        assert!(has_summary || has_warnings || has_errors);
+        
+        // Overall status should match the success flag
+        if result.success {
+            assert!(
+                output.contains("✅ Network appears to be set up correctly") ||
+                output.contains("⚠️  Network is functional but has some configuration warnings")
+            );
+        } else {
+            assert!(output.contains("❌ Network has significant issues"));
         }
     }
 

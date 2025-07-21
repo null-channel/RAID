@@ -1300,7 +1300,22 @@ async fn run_ai_agent_mode(
 }
 
 async fn run_debug_tools(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
-    let debug_tools = DebugTools::new();
+    let debug_tools = DebugTools::initialize_with_availability_check();
+
+    // Report available tools at startup
+    println!("🔧 Checking tool availability...");
+    let available_categories = debug_tools.get_available_categories();
+    if !available_categories.is_empty() {
+        println!("✅ Available tool categories:");
+        for category in &available_categories {
+            let tools = debug_tools.get_category_tools(category);
+            println!("  {:?}: {} tools available", category, tools.len());
+        }
+        println!();
+    } else {
+        println!("⚠️  Warning: No debug tools are available on this system");
+        println!();
+    }
 
     match &cli.command {
         Some(Commands::Debug {
@@ -1311,10 +1326,18 @@ async fn run_debug_tools(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
             lines,
         }) => match tool {
             DebugTool::KubectlGetPods => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Kubernetes) {
+                    println!("❌ Error: Kubernetes tools are not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_kubectl_get_pods(namespace.as_deref()).await;
                 print_debug_result(&result);
             }
             DebugTool::KubectlDescribePod => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Kubernetes) {
+                    println!("❌ Error: Kubernetes tools are not available on this system");
+                    return Ok(());
+                }
                 if let Some(pod_name) = pod {
                     let result = debug_tools
                         .run_kubectl_describe_pod(pod_name, namespace.as_deref())
@@ -1326,27 +1349,63 @@ async fn run_debug_tools(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
             }
+            DebugTool::PacmanListPackages => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::ArchLinux) {
+                    println!("❌ Error: Arch Linux tools are not available on this system");
+                    return Ok(());
+                }
+                let result = debug_tools.run_pacman_list_packages().await;
+                print_debug_result(&result);
+            }
+            DebugTool::BpftoolProgList => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::EbpfDebug) {
+                    println!("❌ Error: eBPF debugging tools are not available on this system");
+                    return Ok(());
+                }
+                let result = debug_tools.run_bpftool_prog_list().await;
+                print_debug_result(&result);
+            }
             DebugTool::KubectlGetServices => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Kubernetes) {
+                    println!("❌ Error: Kubernetes tools are not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools
                     .run_kubectl_get_services(namespace.as_deref())
                     .await;
                 print_debug_result(&result);
             }
             DebugTool::KubectlGetNodes => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Kubernetes) {
+                    println!("❌ Error: Kubernetes tools are not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_kubectl_get_nodes().await;
                 print_debug_result(&result);
             }
             DebugTool::KubectlGetEvents => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Kubernetes) {
+                    println!("❌ Error: Kubernetes tools are not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools
                     .run_kubectl_get_events(namespace.as_deref())
                     .await;
                 print_debug_result(&result);
             }
             DebugTool::JournalctlRecent => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Journalctl) {
+                    println!("❌ Error: journalctl is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_journalctl_recent(*lines).await;
                 print_debug_result(&result);
             }
             DebugTool::JournalctlService => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Journalctl) {
+                    println!("❌ Error: journalctl is not available on this system");
+                    return Ok(());
+                }
                 if let Some(service_name) = service {
                     let result = debug_tools
                         .run_journalctl_service(service_name, *lines)
@@ -1359,14 +1418,26 @@ async fn run_debug_tools(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             DebugTool::JournalctlBoot => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Journalctl) {
+                    println!("❌ Error: journalctl is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_journalctl_boot().await;
                 print_debug_result(&result);
             }
             DebugTool::JournalctlErrors => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Journalctl) {
+                    println!("❌ Error: journalctl is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_journalctl_errors(*lines).await;
                 print_debug_result(&result);
             }
             DebugTool::SystemctlStatus => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Systemctl) {
+                    println!("❌ Error: systemctl is not available on this system");
+                    return Ok(());
+                }
                 if let Some(service_name) = service {
                     let result = debug_tools.run_systemctl_status(service_name).await;
                     print_debug_result(&result);
@@ -1377,116 +1448,218 @@ async fn run_debug_tools(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             DebugTool::PsAux => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::SystemInfo) {
+                    println!("❌ Error: ps aux is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_ps_aux().await;
                 print_debug_result(&result);
             }
             DebugTool::Netstat => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::SystemInfo) {
+                    println!("❌ Error: netstat is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_netstat().await;
                 print_debug_result(&result);
             }
             DebugTool::Df => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::SystemInfo) {
+                    println!("❌ Error: df is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_df().await;
                 print_debug_result(&result);
             }
             DebugTool::Free => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::SystemInfo) {
+                    println!("❌ Error: free is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_free().await;
                 print_debug_result(&result);
             }
             DebugTool::CatProcCgroups => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::ContainerInfo) {
+                    println!("❌ Error: cat /proc/cgroups is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_cat_proc_cgroups().await;
                 print_debug_result(&result);
             }
             DebugTool::LsCgroup => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::ContainerInfo) {
+                    println!("❌ Error: ls /proc/cgroups is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_ls_cgroup().await;
                 print_debug_result(&result);
             }
             DebugTool::CatProcSelfCgroup => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::ContainerInfo) {
+                    println!("❌ Error: cat /proc/self/cgroup is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_cat_proc_self_cgroup().await;
                 print_debug_result(&result);
             }
             DebugTool::CatProcSelfMountinfo => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::ContainerInfo) {
+                    println!("❌ Error: cat /proc/self/mountinfo is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_cat_proc_self_mountinfo().await;
                 print_debug_result(&result);
             }
             DebugTool::Lsns => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::ContainerInfo) {
+                    println!("❌ Error: lsns is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_lsns().await;
                 print_debug_result(&result);
             }
             DebugTool::CatProcSelfStatus => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::ContainerInfo) {
+                    println!("❌ Error: cat /proc/self/status is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_cat_proc_self_status().await;
                 print_debug_result(&result);
             }
             DebugTool::CatProcSelfNs => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::ContainerInfo) {
+                    println!("❌ Error: cat /proc/self/ns is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_cat_proc_self_ns().await;
                 print_debug_result(&result);
             }
-            // Arch Linux specific debugging tools
-            DebugTool::PacmanListPackages => {
-                let result = debug_tools.run_pacman_list_packages().await;
-                print_debug_result(&result);
-            }
             DebugTool::PacmanOrphans => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::ArchLinux) {
+                    println!("❌ Error: pacman orphans is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_pacman_orphans().await;
                 print_debug_result(&result);
             }
             DebugTool::PacmanCheckFiles => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::ArchLinux) {
+                    println!("❌ Error: pacman check files is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_pacman_check_files().await;
                 print_debug_result(&result);
             }
             DebugTool::Checkupdates => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::ArchLinux) {
+                    println!("❌ Error: checkupdates is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_checkupdates().await;
                 print_debug_result(&result);
             }
             DebugTool::PaccacheInfo => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::ArchLinux) {
+                    println!("❌ Error: paccache info is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_paccache_info().await;
                 print_debug_result(&result);
             }
             DebugTool::SystemdAnalyzeTime => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Systemctl) {
+                    println!("❌ Error: systemd analyze time is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_systemd_analyze_time().await;
                 print_debug_result(&result);
             }
             DebugTool::SystemdAnalyzeCriticalChain => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Systemctl) {
+                    println!("❌ Error: systemd analyze critical chain is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_systemd_analyze_critical_chain().await;
                 print_debug_result(&result);
             }
             DebugTool::SystemdAnalyzeBlame => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Systemctl) {
+                    println!("❌ Error: systemd analyze blame is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_systemd_analyze_blame().await;
                 print_debug_result(&result);
             }
             DebugTool::JournalctlListBoots => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Journalctl) {
+                    println!("❌ Error: journalctl list boots is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_journalctl_list_boots().await;
                 print_debug_result(&result);
             }
             DebugTool::Lsmod => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::ArchLinux) {
+                    println!("❌ Error: lsmod is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_lsmod().await;
                 print_debug_result(&result);
             }
             DebugTool::SystemctlFailed => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Systemctl) {
+                    println!("❌ Error: systemctl failed is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_systemctl_failed().await;
                 print_debug_result(&result);
             }
             DebugTool::NeedsReboot => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::ArchLinux) {
+                    println!("❌ Error: needs reboot is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_needs_reboot().await;
                 print_debug_result(&result);
             }
             DebugTool::PacmanMirrorlist => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::ArchLinux) {
+                    println!("❌ Error: pacman mirrorlist is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_pacman_mirrorlist().await;
                 print_debug_result(&result);
             }
             DebugTool::AurHelperInfo => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::ArchLinux) {
+                    println!("❌ Error: aur helper info is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_aur_helper_info().await;
                 print_debug_result(&result);
             }
-            // Kubernetes specific debugging tools
             DebugTool::KubectlGetDeployments => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Kubernetes) {
+                    println!("❌ Error: kubectl get deployments is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_kubectl_get_deployments(namespace.as_deref()).await;
                 print_debug_result(&result);
             }
             DebugTool::KubectlGetConfigmaps => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Kubernetes) {
+                    println!("❌ Error: kubectl get configmaps is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_kubectl_get_configmaps(namespace.as_deref()).await;
                 print_debug_result(&result);
             }
             DebugTool::KubectlLogs => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Kubernetes) {
+                    println!("❌ Error: kubectl logs is not available on this system");
+                    return Ok(());
+                }
                 if let Some(pod_name) = pod {
                     let result = debug_tools.run_kubectl_logs(pod_name, namespace.as_deref(), *lines).await;
                     print_debug_result(&result);
@@ -1495,205 +1668,446 @@ async fn run_debug_tools(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             DebugTool::KubectlTopPods => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Kubernetes) {
+                    println!("❌ Error: kubectl top pods is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_kubectl_top_pods(namespace.as_deref()).await;
                 print_debug_result(&result);
             }
             DebugTool::KubectlTopNodes => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Kubernetes) {
+                    println!("❌ Error: kubectl top nodes is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_kubectl_top_nodes().await;
                 print_debug_result(&result);
             }
             DebugTool::KubectlClusterInfo => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Kubernetes) {
+                    println!("❌ Error: kubectl cluster info is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_kubectl_cluster_info().await;
                 print_debug_result(&result);
             }
             DebugTool::KubectlGetPv => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Kubernetes) {
+                    println!("❌ Error: kubectl get pv is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_kubectl_get_pv().await;
                 print_debug_result(&result);
             }
             DebugTool::KubectlGetPvc => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Kubernetes) {
+                    println!("❌ Error: kubectl get pvc is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_kubectl_get_pvc(namespace.as_deref()).await;
                 print_debug_result(&result);
             }
             DebugTool::KubeletStatus => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Kubernetes) {
+                    println!("❌ Error: kubelet status is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_kubelet_status().await;
                 print_debug_result(&result);
             }
             DebugTool::KubeletLogs => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Kubernetes) {
+                    println!("❌ Error: kubelet logs is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_kubelet_logs(*lines).await;
                 print_debug_result(&result);
             }
             DebugTool::KubeletConfig => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Kubernetes) {
+                    println!("❌ Error: kubelet config is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_kubelet_config().await;
                 print_debug_result(&result);
             }
             DebugTool::EtcdClusterHealth => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Kubernetes) {
+                    println!("❌ Error: etcd cluster health is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_etcd_cluster_health().await;
                 print_debug_result(&result);
             }
             DebugTool::EtcdMemberList => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Kubernetes) {
+                    println!("❌ Error: etcd member list is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_etcd_member_list().await;
                 print_debug_result(&result);
             }
             DebugTool::EtcdEndpointHealth => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Kubernetes) {
+                    println!("❌ Error: etcd endpoint health is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_etcd_endpoint_health().await;
                 print_debug_result(&result);
             }
             DebugTool::EtcdEndpointStatus => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::Kubernetes) {
+                    println!("❌ Error: etcd endpoint status is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_etcd_endpoint_status().await;
                 print_debug_result(&result);
             }
-            // Network debugging tools
             DebugTool::IpAddr => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::NetworkDebug) {
+                    println!("❌ Error: ip addr is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_ip_addr().await;
                 print_debug_result(&result);
             }
             DebugTool::IpRoute => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::NetworkDebug) {
+                    println!("❌ Error: ip route is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_ip_route().await;
                 print_debug_result(&result);
             }
             DebugTool::Ss => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::NetworkDebug) {
+                    println!("❌ Error: ss is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_ss().await;
                 print_debug_result(&result);
             }
             DebugTool::Ping => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::NetworkDebug) {
+                    println!("❌ Error: ping is not available on this system");
+                    return Ok(());
+                }
                 // Default to google.com, users can specify different host via question answering mode
                 let result = debug_tools.run_ping("8.8.8.8").await;
                 print_debug_result(&result);
             }
             DebugTool::Traceroute => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::NetworkDebug) {
+                    println!("❌ Error: traceroute is not available on this system");
+                    return Ok(());
+                }
                 // Default to google.com, users can specify different host via question answering mode
                 let result = debug_tools.run_traceroute("8.8.8.8").await;
                 print_debug_result(&result);
             }
             DebugTool::Dig => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::NetworkDebug) {
+                    println!("❌ Error: dig is not available on this system");
+                    return Ok(());
+                }
                 // Default to google.com, users can specify different domain via question answering mode
                 let result = debug_tools.run_dig("google.com").await;
                 print_debug_result(&result);
             }
             DebugTool::Iptables => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::NetworkDebug) {
+                    println!("❌ Error: iptables is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_iptables().await;
                 print_debug_result(&result);
             }
             DebugTool::Ethtool => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::NetworkDebug) {
+                    println!("❌ Error: ethtool is not available on this system");
+                    return Ok(());
+                }
                 // Default to eth0, users can specify different interface via question answering mode
                 let result = debug_tools.run_ethtool("eth0").await;
                 print_debug_result(&result);
             }
             DebugTool::NetstatLegacy => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::NetworkDebug) {
+                    println!("❌ Error: netstat legacy is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_netstat_legacy().await;
                 print_debug_result(&result);
             }
             DebugTool::ArpTable => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::NetworkDebug) {
+                    println!("❌ Error: arp table is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_arp_table().await;
                 print_debug_result(&result);
             }
             DebugTool::InterfaceStats => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::NetworkDebug) {
+                    println!("❌ Error: interface stats is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_interface_stats().await;
                 print_debug_result(&result);
             }
             DebugTool::Iperf3 => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::NetworkDebug) {
+                    println!("❌ Error: iperf3 is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_iperf3_server_check().await;
                 print_debug_result(&result);
             }
             DebugTool::NetworkNamespaces => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::NetworkDebug) {
+                    println!("❌ Error: network namespaces is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_network_namespaces().await;
                 print_debug_result(&result);
             }
             DebugTool::TcpdumpSample => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::NetworkDebug) {
+                    println!("❌ Error: tcpdump sample is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_tcpdump_sample(None).await;
                 print_debug_result(&result);
             }
             DebugTool::BridgeInfo => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::NetworkDebug) {
+                    println!("❌ Error: bridge info is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_bridge_info().await;
                 print_debug_result(&result);
             }
             DebugTool::WirelessInfo => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::NetworkDebug) {
+                    println!("❌ Error: wireless info is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_wireless_info().await;
                 print_debug_result(&result);
             }
             DebugTool::Nftables => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::NetworkDebug) {
+                    println!("❌ Error: nftables is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_nftables().await;
                 print_debug_result(&result);
             }
             DebugTool::DnsTest => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::NetworkDebug) {
+                    println!("❌ Error: DNS test is not available on this system");
+                    return Ok(());
+                }
+                // Default to google.com, users can specify different domain via question answering mode
                 let result = debug_tools.run_dns_test("google.com").await;
                 print_debug_result(&result);
             }
-            // eBPF debugging tools
+            DebugTool::UfwStatus => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::NetworkDebug) {
+                    println!("❌ Error: UFW status check is not available on this system");
+                    return Ok(());
+                }
+                let result = debug_tools.run_ufw_status().await;
+                print_debug_result(&result);
+            }
+            DebugTool::NetworkManagerStatus => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::NetworkDebug) {
+                    println!("❌ Error: NetworkManager status check is not available on this system");
+                    return Ok(());
+                }
+                let result = debug_tools.run_networkmanager_status().await;
+                print_debug_result(&result);
+            }
+            DebugTool::DnsConfig => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::NetworkDebug) {
+                    println!("❌ Error: DNS config check is not available on this system");
+                    return Ok(());
+                }
+                let result = debug_tools.run_dns_config().await;
+                print_debug_result(&result);
+            }
+            DebugTool::ConnectivityTest => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::NetworkDebug) {
+                    println!("❌ Error: Connectivity test is not available on this system");
+                    return Ok(());
+                }
+                let result = debug_tools.run_connectivity_test().await;
+                print_debug_result(&result);
+            }
+            DebugTool::NetworkHealthCheck => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::NetworkDebug) {
+                    println!("❌ Error: Network health check is not available on this system");
+                    return Ok(());
+                }
+                let results = debug_tools.run_network_health_check().await;
+                for result in results {
+                    print_debug_result(&result);
+                }
+            }
+            DebugTool::NetworkSetupCheck => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::NetworkDebug) {
+                    println!("❌ Error: Network setup check is not available on this system");
+                    return Ok(());
+                }
+                let result = debug_tools.run_network_setup_check().await;
+                print_debug_result(&result);
+            }
             DebugTool::BpftoolProgList => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::EbpfDebug) {
+                    println!("❌ Error: bpftool prog list is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_bpftool_prog_list().await;
                 print_debug_result(&result);
             }
             DebugTool::BpftoolProgShow => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::EbpfDebug) {
+                    println!("❌ Error: bpftool prog show is not available on this system");
+                    return Ok(());
+                }
                 // Default to program ID 1, users can specify different ID via question answering mode
                 let result = debug_tools.run_bpftool_prog_show("1").await;
                 print_debug_result(&result);
             }
             DebugTool::BpftoolProgDumpXlated => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::EbpfDebug) {
+                    println!("❌ Error: bpftool prog dump xlated is not available on this system");
+                    return Ok(());
+                }
                 // Default to program ID 1, users can specify different ID via question answering mode
                 let result = debug_tools.run_bpftool_prog_dump_xlated("1").await;
                 print_debug_result(&result);
             }
             DebugTool::BpftoolProgDumpJited => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::EbpfDebug) {
+                    println!("❌ Error: bpftool prog dump jited is not available on this system");
+                    return Ok(());
+                }
                 // Default to program ID 1, users can specify different ID via question answering mode
                 let result = debug_tools.run_bpftool_prog_dump_jited("1").await;
                 print_debug_result(&result);
             }
             DebugTool::BpftoolMapList => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::EbpfDebug) {
+                    println!("❌ Error: bpftool map list is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_bpftool_map_list().await;
                 print_debug_result(&result);
             }
             DebugTool::BpftoolMapShow => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::EbpfDebug) {
+                    println!("❌ Error: bpftool map show is not available on this system");
+                    return Ok(());
+                }
                 // Default to map ID 1, users can specify different ID via question answering mode
                 let result = debug_tools.run_bpftool_map_show("1").await;
                 print_debug_result(&result);
             }
             DebugTool::BpftoolMapDump => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::EbpfDebug) {
+                    println!("❌ Error: bpftool map dump is not available on this system");
+                    return Ok(());
+                }
                 // Default to map ID 1, users can specify different ID via question answering mode
                 let result = debug_tools.run_bpftool_map_dump("1").await;
                 print_debug_result(&result);
             }
             DebugTool::BpftoolLinkList => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::EbpfDebug) {
+                    println!("❌ Error: bpftool link list is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_bpftool_link_list().await;
                 print_debug_result(&result);
             }
             DebugTool::BpftoolFeatureProbe => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::EbpfDebug) {
+                    println!("❌ Error: bpftool feature probe is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_bpftool_feature_probe().await;
                 print_debug_result(&result);
             }
             DebugTool::BpftoolNetList => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::EbpfDebug) {
+                    println!("❌ Error: bpftool net list is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_bpftool_net_list().await;
                 print_debug_result(&result);
             }
             DebugTool::BpftoolCgroupList => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::EbpfDebug) {
+                    println!("❌ Error: bpftool cgroup list is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_bpftool_cgroup_list().await;
                 print_debug_result(&result);
             }
             DebugTool::BpftoolBtfList => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::EbpfDebug) {
+                    println!("❌ Error: bpftool btf list is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_bpftool_btf_list().await;
                 print_debug_result(&result);
             }
             DebugTool::BpfMountCheck => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::EbpfDebug) {
+                    println!("❌ Error: bpf mount check is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_bpf_mount_check().await;
                 print_debug_result(&result);
             }
             DebugTool::BpfLsPinned => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::EbpfDebug) {
+                    println!("❌ Error: bpf ls pinned is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_bpf_ls_pinned().await;
                 print_debug_result(&result);
             }
             DebugTool::BpfKernelConfig => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::EbpfDebug) {
+                    println!("❌ Error: bpf kernel config is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_bpf_kernel_config().await;
                 print_debug_result(&result);
             }
             DebugTool::BpftraceSyscalls => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::EbpfDebug) {
+                    println!("❌ Error: bpftrace syscalls is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_bpftrace_syscalls().await;
                 print_debug_result(&result);
             }
             DebugTool::BpftraceListTracepoints => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::EbpfDebug) {
+                    println!("❌ Error: bpftrace list tracepoints is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_bpftrace_list_tracepoints().await;
                 print_debug_result(&result);
             }
             DebugTool::BpfJitStatus => {
+                if !debug_tools.is_category_available(&tools::ToolCategory::EbpfDebug) {
+                    println!("❌ Error: bpf jit status is not available on this system");
+                    return Ok(());
+                }
                 let result = debug_tools.run_bpf_jit_status().await;
                 print_debug_result(&result);
             }
@@ -1807,6 +2221,12 @@ NETWORK DIAGNOSTICS:
 - dns_test <domain>: Test DNS resolution speed across multiple servers
 - iptables: Show firewall rules (iptables)
 - nftables: Show firewall rules (nftables)
+- ufw_status: Check UFW (Uncomplicated Firewall) status
+- networkmanager_status: Check NetworkManager service status
+- dns_config: Check DNS configuration (/etc/resolv.conf)
+- connectivity_test: Test connectivity to multiple standard hosts
+- network_health_check: Comprehensive network diagnostic check (multiple tools)
+- network_setup_check: Quick network setup verification for standard users
 - ethtool <interface>: Show ethernet interface statistics
 - arp_table: Show ARP neighbor table
 - interface_stats: Show network interface statistics from /proc/net/dev
@@ -2123,6 +2543,29 @@ Select 2-5 most relevant tools based on the question."#,
                 let domain = parts.get(1).unwrap_or(&"google.com").to_string();
                 debug_tools.run_dns_test(&domain).await
             }
+            "ufw_status" => debug_tools.run_ufw_status().await,
+            "networkmanager_status" => debug_tools.run_networkmanager_status().await,
+            "dns_config" => debug_tools.run_dns_config().await,
+            "connectivity_test" => debug_tools.run_connectivity_test().await,
+            "network_health_check" => {
+                // For question answering, run the comprehensive check and combine results
+                let results = debug_tools.run_network_health_check().await;
+                let combined_output = results.iter()
+                    .map(|r| format!("=== {} ===\n{}\n", r.command, r.output))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let overall_success = results.iter().any(|r| r.success);
+                
+                tools::DebugToolResult {
+                    tool_name: "network_health_check".to_string(),
+                    command: "comprehensive network health check".to_string(),
+                    success: overall_success,
+                    output: combined_output,
+                    error: if overall_success { None } else { Some("Some network checks failed".to_string()) },
+                    execution_time_ms: results.iter().map(|r| r.execution_time_ms).sum(),
+                }
+            }
+            "network_setup_check" => debug_tools.run_network_setup_check().await,
             // eBPF debugging tools
             "bpftool_prog_list" => debug_tools.run_bpftool_prog_list().await,
             "bpftool_prog_show" => {
@@ -2443,6 +2886,24 @@ async fn run_ai_agent(
                     DebugTool::WirelessInfo => debug_tools.run_wireless_info().await,
                     DebugTool::Nftables => debug_tools.run_nftables().await,
                     DebugTool::DnsTest => debug_tools.run_dns_test("google.com").await,
+                    DebugTool::UfwStatus => debug_tools.run_ufw_status().await,
+                    DebugTool::NetworkManagerStatus => debug_tools.run_networkmanager_status().await,
+                    DebugTool::DnsConfig => debug_tools.run_dns_config().await,
+                    DebugTool::ConnectivityTest => debug_tools.run_connectivity_test().await,
+                    DebugTool::NetworkHealthCheck => {
+                        // For the AI agent, we'll return the first result from the health check
+                        // since it expects a single DebugToolResult
+                        let results = debug_tools.run_network_health_check().await;
+                        results.into_iter().next().unwrap_or_else(|| tools::DebugToolResult {
+                            tool_name: "network_health_check".to_string(),
+                            command: "comprehensive network health check".to_string(),
+                            success: false,
+                            output: String::new(),
+                            error: Some("No results from network health check".to_string()),
+                            execution_time_ms: 0,
+                        })
+                    }
+                    DebugTool::NetworkSetupCheck => debug_tools.run_network_setup_check().await,
                     // eBPF debugging tools
                     DebugTool::BpftoolProgList => debug_tools.run_bpftool_prog_list().await,
                     DebugTool::BpftoolProgShow => debug_tools.run_bpftool_prog_show("1").await,

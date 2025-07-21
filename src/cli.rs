@@ -331,6 +331,18 @@ pub enum DebugTool {
     Nftables,
     /// [Network] Test DNS resolution speed
     DnsTest,
+    /// [Network] Check UFW firewall status
+    UfwStatus,
+    /// [Network] Check NetworkManager status
+    NetworkManagerStatus,
+    /// [Network] Check DNS configuration (/etc/resolv.conf)
+    DnsConfig,
+    /// [Network] Test connectivity to multiple hosts
+    ConnectivityTest,
+    /// [Network] Comprehensive network health check
+    NetworkHealthCheck,
+    /// [Network] Quick network setup check for standard users
+    NetworkSetupCheck,
     /// [eBPF] List all loaded BPF programs
     BpftoolProgList,
     /// [eBPF] Show detailed information about a BPF program
