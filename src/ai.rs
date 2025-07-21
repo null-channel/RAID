@@ -911,8 +911,11 @@ Your task is to help diagnose and solve the user's problem by:
 1. Analyzing the problem description
 2. Calling appropriate diagnostic tools to gather information
 3. Making decisions based on tool results
-4. Calling additional tools if needed
-5. Providing a final analysis and solution
+4. Calling additional tools if needed to get a complete picture
+5. Continue investigating until you have thoroughly examined all relevant aspects
+6. Only provide a final analysis when you are confident you have gathered sufficient information
+
+IMPORTANT: Be thorough in your investigation. Use multiple tools to cross-reference findings and build a complete understanding of the system state. Do not stop early - continue checking different aspects until you have a comprehensive view.
 
 IMPORTANT: For each response, you MUST use one of these formats:
 
@@ -944,9 +947,9 @@ If you can answer the question with current information, use COMPLETE: followed 
 
         // Safety counters to prevent infinite loops
         let mut consecutive_analysis_count = 0;
-        let max_consecutive_analysis = 3;
+        let max_consecutive_analysis = 10; // Increased from 3 to 10 - AI should be able to analyze more before giving up
         let mut total_iterations = 0;
-        let max_total_iterations = 20;
+        let max_total_iterations = 100; // Increased from 20 to 100 - AI should be able to iterate much more
 
         // Main agent loop
         loop {
@@ -1005,9 +1008,21 @@ If you can answer the question with current information, use COMPLETE: followed 
                         });
                     }
                     
-                    // Safety check: if we've had too many consecutive analysis responses without tool calls,
-                    // treat the latest analysis as the final answer
-                    if consecutive_analysis_count >= max_consecutive_analysis {
+                    // Check if the AI is indicating it has completed its analysis and has no more tools to run
+                    let analysis_lower = analysis.to_lowercase();
+                    let indicates_completion = analysis_lower.contains("no additional") ||
+                        analysis_lower.contains("no further") ||
+                        analysis_lower.contains("analysis complete") ||
+                        analysis_lower.contains("diagnostic complete") ||
+                        analysis_lower.contains("examination complete") ||
+                        (analysis_lower.contains("no more") && analysis_lower.contains("check")) ||
+                        (analysis_lower.contains("no more") && analysis_lower.contains("tool")) ||
+                        (analysis_lower.contains("nothing more") && analysis_lower.contains("check")) ||
+                        (analysis_lower.contains("nothing more") && analysis_lower.contains("tool"));
+                    
+                    // Safety check: if we've had too many consecutive analysis responses without tool calls
+                    // AND the AI is not indicating active work, treat as completion
+                    if consecutive_analysis_count >= max_consecutive_analysis && indicates_completion {
                         return Ok(AIAgentResult::Success {
                             final_analysis: analysis,
                             tool_calls_used: self.current_tool_calls,
