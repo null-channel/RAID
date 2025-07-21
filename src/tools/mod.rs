@@ -4,6 +4,7 @@ use std::collections::HashMap;
 // Re-export all tool modules
 pub mod arch_debug;
 pub mod container_info;
+pub mod ebpf_debug;
 pub mod journalctl;
 pub mod kubectl;
 pub mod kubernetes_debug;

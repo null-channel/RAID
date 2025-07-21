@@ -1485,6 +1485,84 @@ async fn run_debug_tools(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
                 let result = debug_tools.run_dns_test("google.com").await;
                 print_debug_result(&result);
             }
+            // eBPF debugging tools
+            DebugTool::BpftoolProgList => {
+                let result = debug_tools.run_bpftool_prog_list().await;
+                print_debug_result(&result);
+            }
+            DebugTool::BpftoolProgShow => {
+                // Default to program ID 1, users can specify different ID via question answering mode
+                let result = debug_tools.run_bpftool_prog_show("1").await;
+                print_debug_result(&result);
+            }
+            DebugTool::BpftoolProgDumpXlated => {
+                // Default to program ID 1, users can specify different ID via question answering mode
+                let result = debug_tools.run_bpftool_prog_dump_xlated("1").await;
+                print_debug_result(&result);
+            }
+            DebugTool::BpftoolProgDumpJited => {
+                // Default to program ID 1, users can specify different ID via question answering mode
+                let result = debug_tools.run_bpftool_prog_dump_jited("1").await;
+                print_debug_result(&result);
+            }
+            DebugTool::BpftoolMapList => {
+                let result = debug_tools.run_bpftool_map_list().await;
+                print_debug_result(&result);
+            }
+            DebugTool::BpftoolMapShow => {
+                // Default to map ID 1, users can specify different ID via question answering mode
+                let result = debug_tools.run_bpftool_map_show("1").await;
+                print_debug_result(&result);
+            }
+            DebugTool::BpftoolMapDump => {
+                // Default to map ID 1, users can specify different ID via question answering mode
+                let result = debug_tools.run_bpftool_map_dump("1").await;
+                print_debug_result(&result);
+            }
+            DebugTool::BpftoolLinkList => {
+                let result = debug_tools.run_bpftool_link_list().await;
+                print_debug_result(&result);
+            }
+            DebugTool::BpftoolFeatureProbe => {
+                let result = debug_tools.run_bpftool_feature_probe().await;
+                print_debug_result(&result);
+            }
+            DebugTool::BpftoolNetList => {
+                let result = debug_tools.run_bpftool_net_list().await;
+                print_debug_result(&result);
+            }
+            DebugTool::BpftoolCgroupList => {
+                let result = debug_tools.run_bpftool_cgroup_list().await;
+                print_debug_result(&result);
+            }
+            DebugTool::BpftoolBtfList => {
+                let result = debug_tools.run_bpftool_btf_list().await;
+                print_debug_result(&result);
+            }
+            DebugTool::BpfMountCheck => {
+                let result = debug_tools.run_bpf_mount_check().await;
+                print_debug_result(&result);
+            }
+            DebugTool::BpfLsPinned => {
+                let result = debug_tools.run_bpf_ls_pinned().await;
+                print_debug_result(&result);
+            }
+            DebugTool::BpfKernelConfig => {
+                let result = debug_tools.run_bpf_kernel_config().await;
+                print_debug_result(&result);
+            }
+            DebugTool::BpftraceSyscalls => {
+                let result = debug_tools.run_bpftrace_syscalls().await;
+                print_debug_result(&result);
+            }
+            DebugTool::BpftraceListTracepoints => {
+                let result = debug_tools.run_bpftrace_list_tracepoints().await;
+                print_debug_result(&result);
+            }
+            DebugTool::BpfJitStatus => {
+                let result = debug_tools.run_bpf_jit_status().await;
+                print_debug_result(&result);
+            }
         },
         _ => {
             println!("Error: Debug command not found");
@@ -1656,6 +1734,26 @@ KUBERNETES TOOLS:
 - etcd_member_list: Get etcd member list
 - etcd_endpoint_health: Check etcd endpoint health
 - etcd_endpoint_status: Get etcd endpoint status and database size
+
+EBPF DEBUGGING TOOLS:
+- bpftool_prog_list: List all loaded BPF programs
+- bpftool_prog_show [prog_id]: Show detailed information about a BPF program (default: id 1)
+- bpftool_prog_dump_xlated [prog_id]: Dump BPF program bytecode (translated, default: id 1)
+- bpftool_prog_dump_jited [prog_id]: Dump BPF program JIT-compiled code (default: id 1)
+- bpftool_map_list: List all BPF maps
+- bpftool_map_show [map_id]: Show detailed information about a BPF map (default: id 1)
+- bpftool_map_dump [map_id]: Dump BPF map contents (default: id 1)
+- bpftool_link_list: List all BPF links (attachments)
+- bpftool_feature_probe: Show BPF feature support information
+- bpftool_net_list: List BPF network attachments
+- bpftool_cgroup_list: List BPF cgroup attachments
+- bpftool_btf_list: List BPF BTF (Type Format) objects
+- bpf_mount_check: Check if BPF filesystem is mounted
+- bpf_ls_pinned: List BPF pinned objects in filesystem
+- bpf_kernel_config: Show kernel BPF configuration
+- bpftrace_syscalls: Simple BPF tracing (syscall counts, 5s sample)
+- bpftrace_list_tracepoints: List available BPF tracepoints
+- bpf_jit_status: Check BPF JIT compiler status
 "#;
 
     // First, ask the AI which tools it wants to run
@@ -1891,6 +1989,40 @@ Select 2-5 most relevant tools based on the question."#,
                 let domain = parts.get(1).unwrap_or(&"google.com").to_string();
                 debug_tools.run_dns_test(&domain).await
             }
+            // eBPF debugging tools
+            "bpftool_prog_list" => debug_tools.run_bpftool_prog_list().await,
+            "bpftool_prog_show" => {
+                let prog_id = parts.get(1).unwrap_or(&"1").to_string();
+                debug_tools.run_bpftool_prog_show(&prog_id).await
+            }
+            "bpftool_prog_dump_xlated" => {
+                let prog_id = parts.get(1).unwrap_or(&"1").to_string();
+                debug_tools.run_bpftool_prog_dump_xlated(&prog_id).await
+            }
+            "bpftool_prog_dump_jited" => {
+                let prog_id = parts.get(1).unwrap_or(&"1").to_string();
+                debug_tools.run_bpftool_prog_dump_jited(&prog_id).await
+            }
+            "bpftool_map_list" => debug_tools.run_bpftool_map_list().await,
+            "bpftool_map_show" => {
+                let map_id = parts.get(1).unwrap_or(&"1").to_string();
+                debug_tools.run_bpftool_map_show(&map_id).await
+            }
+            "bpftool_map_dump" => {
+                let map_id = parts.get(1).unwrap_or(&"1").to_string();
+                debug_tools.run_bpftool_map_dump(&map_id).await
+            }
+            "bpftool_link_list" => debug_tools.run_bpftool_link_list().await,
+            "bpftool_feature_probe" => debug_tools.run_bpftool_feature_probe().await,
+            "bpftool_net_list" => debug_tools.run_bpftool_net_list().await,
+            "bpftool_cgroup_list" => debug_tools.run_bpftool_cgroup_list().await,
+            "bpftool_btf_list" => debug_tools.run_bpftool_btf_list().await,
+            "bpf_mount_check" => debug_tools.run_bpf_mount_check().await,
+            "bpf_ls_pinned" => debug_tools.run_bpf_ls_pinned().await,
+            "bpf_kernel_config" => debug_tools.run_bpf_kernel_config().await,
+            "bpftrace_syscalls" => debug_tools.run_bpftrace_syscalls().await,
+            "bpftrace_list_tracepoints" => debug_tools.run_bpftrace_list_tracepoints().await,
+            "bpf_jit_status" => debug_tools.run_bpf_jit_status().await,
             _ => {
                 println!("⚠️  Unknown tool: {}", tool_name);
                 continue;
@@ -2177,6 +2309,25 @@ async fn run_ai_agent(
                     DebugTool::WirelessInfo => debug_tools.run_wireless_info().await,
                     DebugTool::Nftables => debug_tools.run_nftables().await,
                     DebugTool::DnsTest => debug_tools.run_dns_test("google.com").await,
+                    // eBPF debugging tools
+                    DebugTool::BpftoolProgList => debug_tools.run_bpftool_prog_list().await,
+                    DebugTool::BpftoolProgShow => debug_tools.run_bpftool_prog_show("1").await,
+                    DebugTool::BpftoolProgDumpXlated => debug_tools.run_bpftool_prog_dump_xlated("1").await,
+                    DebugTool::BpftoolProgDumpJited => debug_tools.run_bpftool_prog_dump_jited("1").await,
+                    DebugTool::BpftoolMapList => debug_tools.run_bpftool_map_list().await,
+                    DebugTool::BpftoolMapShow => debug_tools.run_bpftool_map_show("1").await,
+                    DebugTool::BpftoolMapDump => debug_tools.run_bpftool_map_dump("1").await,
+                    DebugTool::BpftoolLinkList => debug_tools.run_bpftool_link_list().await,
+                    DebugTool::BpftoolFeatureProbe => debug_tools.run_bpftool_feature_probe().await,
+                    DebugTool::BpftoolNetList => debug_tools.run_bpftool_net_list().await,
+                    DebugTool::BpftoolCgroupList => debug_tools.run_bpftool_cgroup_list().await,
+                    DebugTool::BpftoolBtfList => debug_tools.run_bpftool_btf_list().await,
+                    DebugTool::BpfMountCheck => debug_tools.run_bpf_mount_check().await,
+                    DebugTool::BpfLsPinned => debug_tools.run_bpf_ls_pinned().await,
+                    DebugTool::BpfKernelConfig => debug_tools.run_bpf_kernel_config().await,
+                    DebugTool::BpftraceSyscalls => debug_tools.run_bpftrace_syscalls().await,
+                    DebugTool::BpftraceListTracepoints => debug_tools.run_bpftrace_list_tracepoints().await,
+                    DebugTool::BpfJitStatus => debug_tools.run_bpf_jit_status().await,
                 };
 
                 tool_results.push(result.clone());
@@ -2417,6 +2568,25 @@ fn parse_ai_response(response: &str) -> AIAgentAction {
                 "wireless_info" => DebugTool::WirelessInfo,
                 "nftables" => DebugTool::Nftables,
                 "dns_test" => DebugTool::DnsTest,
+                // eBPF debugging tools
+                "bpftool_prog_list" => DebugTool::BpftoolProgList,
+                "bpftool_prog_show" => DebugTool::BpftoolProgShow,
+                "bpftool_prog_dump_xlated" => DebugTool::BpftoolProgDumpXlated,
+                "bpftool_prog_dump_jited" => DebugTool::BpftoolProgDumpJited,
+                "bpftool_map_list" => DebugTool::BpftoolMapList,
+                "bpftool_map_show" => DebugTool::BpftoolMapShow,
+                "bpftool_map_dump" => DebugTool::BpftoolMapDump,
+                "bpftool_link_list" => DebugTool::BpftoolLinkList,
+                "bpftool_feature_probe" => DebugTool::BpftoolFeatureProbe,
+                "bpftool_net_list" => DebugTool::BpftoolNetList,
+                "bpftool_cgroup_list" => DebugTool::BpftoolCgroupList,
+                "bpftool_btf_list" => DebugTool::BpftoolBtfList,
+                "bpf_mount_check" => DebugTool::BpfMountCheck,
+                "bpf_ls_pinned" => DebugTool::BpfLsPinned,
+                "bpf_kernel_config" => DebugTool::BpfKernelConfig,
+                "bpftrace_syscalls" => DebugTool::BpftraceSyscalls,
+                "bpftrace_list_tracepoints" => DebugTool::BpftraceListTracepoints,
+                "bpf_jit_status" => DebugTool::BpfJitStatus,
                 _ => {
                     println!("Unknown tool: {}", tool_name);
                     return AIAgentAction::ProvideAnalysis {

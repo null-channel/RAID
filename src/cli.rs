@@ -323,6 +323,42 @@ pub enum DebugTool {
     Nftables,
     /// [Network] Test DNS resolution speed
     DnsTest,
+    /// [eBPF] List all loaded BPF programs
+    BpftoolProgList,
+    /// [eBPF] Show detailed information about a BPF program
+    BpftoolProgShow,
+    /// [eBPF] Dump BPF program bytecode (translated)
+    BpftoolProgDumpXlated,
+    /// [eBPF] Dump BPF program JIT-compiled code
+    BpftoolProgDumpJited,
+    /// [eBPF] List all BPF maps
+    BpftoolMapList,
+    /// [eBPF] Show detailed information about a BPF map
+    BpftoolMapShow,
+    /// [eBPF] Dump BPF map contents
+    BpftoolMapDump,
+    /// [eBPF] List all BPF links (attachments)
+    BpftoolLinkList,
+    /// [eBPF] Show BPF feature support information
+    BpftoolFeatureProbe,
+    /// [eBPF] List BPF network attachments
+    BpftoolNetList,
+    /// [eBPF] List BPF cgroup attachments
+    BpftoolCgroupList,
+    /// [eBPF] List BPF BTF (Type Format) objects
+    BpftoolBtfList,
+    /// [eBPF] Check if BPF filesystem is mounted
+    BpfMountCheck,
+    /// [eBPF] List BPF pinned objects in filesystem
+    BpfLsPinned,
+    /// [eBPF] Show kernel BPF configuration
+    BpfKernelConfig,
+    /// [eBPF] Simple BPF tracing (syscall counts)
+    BpftraceSyscalls,
+    /// [eBPF] List available BPF tracepoints
+    BpftraceListTracepoints,
+    /// [eBPF] Check BPF JIT compiler status
+    BpfJitStatus,
 }
 
 #[derive(Debug, Clone)]
