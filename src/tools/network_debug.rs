@@ -1022,9 +1022,15 @@ impl DebugTools {
         
         full_output.push_str(&format!("🏁 Overall Status: {}\n", overall_status));
         
+        // Extract the actual commands that were run
+        let commands_run = health_results.iter()
+            .map(|r| r.command.clone())
+            .collect::<Vec<_>>()
+            .join("; ");
+        
         DebugToolResult {
             tool_name: "network_setup_check".to_string(),
-            command: "comprehensive network setup verification".to_string(),
+            command: commands_run,
             success: errors.is_empty(),
             output: full_output,
             error: if errors.is_empty() { None } else { Some(format!("{} issues found", errors.len())) },
@@ -1340,7 +1346,8 @@ mod tests {
 
         let result = debug_tools.run_network_setup_check().await;
         assert_eq!(result.tool_name, "network_setup_check");
-        assert_eq!(result.command, "comprehensive network setup verification");
+        assert!(result.command.contains("ip addr show")); // Should contain actual commands
+        assert!(result.command.contains("; ")); // Should be multiple commands joined
 
         // Should provide a comprehensive analysis
         assert!(!result.output.is_empty());
