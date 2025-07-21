@@ -104,6 +104,199 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     run_unified_ai_system(&config, &ui_formatter, &cli).await
 }
 
+/// Run basic diagnostic tools first to provide context to the AI
+async fn run_initial_system_diagnostics(debug_tools: &DebugTools, ui_formatter: &UIFormatter) -> String {
+    let mut context = String::new();
+    
+    context.push_str("🔍 INITIAL SYSTEM DIAGNOSTICS\n");
+    context.push_str("============================\n\n");
+    
+    // Run a comprehensive set of basic diagnostics
+    ui_formatter.show_progress("Running initial system diagnostics", || async {
+        
+        // 1. Basic Network Check
+        context.push_str("📡 NETWORK STATUS:\n");
+        let network_result = debug_tools.run_ip_addr().await;
+        context.push_str(&format!("Command: {}\n", network_result.command));
+        if network_result.success {
+            context.push_str(&format!("Status: ✅ Network interfaces detected\n"));
+            // Show just interface names, not full output to keep it concise
+            let interfaces: Vec<&str> = network_result.output.lines()
+                .filter(|line| line.contains(": <"))
+                .map(|line| line.split(':').next().unwrap_or("unknown").trim())
+                .filter(|name| *name != "lo") // Skip loopback
+                .collect();
+            if !interfaces.is_empty() {
+                context.push_str(&format!("Interfaces: {}\n", interfaces.join(", ")));
+            }
+        } else {
+            context.push_str("Status: ❌ Failed to check network interfaces\n");
+        }
+        
+        // Basic connectivity test
+        let connectivity_result = debug_tools.run_connectivity_test().await;
+        context.push_str(&format!("Command: {}\n", connectivity_result.command));
+        if connectivity_result.success {
+            context.push_str("Internet: ✅ Basic connectivity working\n");
+        } else {
+            context.push_str("Internet: ❌ No internet connectivity\n");
+        }
+        context.push_str("\n");
+        
+        // 2. Memory Status
+        context.push_str("💾 MEMORY STATUS:\n");
+        let memory_result = debug_tools.run_free().await;
+        context.push_str(&format!("Command: {}\n", memory_result.command));
+        if memory_result.success {
+            context.push_str("Status: ✅ Memory information available\n");
+            // Extract key memory stats
+            for line in memory_result.output.lines() {
+                if line.starts_with("Mem:") {
+                    context.push_str(&format!("Memory: {}\n", line));
+                } else if line.starts_with("Swap:") {
+                    context.push_str(&format!("Swap: {}\n", line));
+                }
+            }
+        } else {
+            context.push_str("Status: ❌ Failed to check memory\n");
+        }
+        context.push_str("\n");
+        
+        // 3. Disk Status  
+        context.push_str("💿 STORAGE STATUS:\n");
+        let disk_result = debug_tools.run_df().await;
+        context.push_str(&format!("Command: {}\n", disk_result.command));
+        if disk_result.success {
+            context.push_str("Status: ✅ Disk information available\n");
+            // Show just filesystem usage summary
+            let mut fs_count = 0;
+            for line in disk_result.output.lines() {
+                if line.starts_with("/dev/") && fs_count < 5 { // Limit to avoid spam
+                    context.push_str(&format!("Filesystem: {}\n", line));
+                    fs_count += 1;
+                }
+            }
+        } else {
+            context.push_str("Status: ❌ Failed to check disk usage\n");
+        }
+        context.push_str("\n");
+        
+        // 4. Process Overview
+        context.push_str("⚙️ PROCESS STATUS:\n");
+        let process_result = debug_tools.run_top().await;
+        context.push_str(&format!("Command: {}\n", process_result.command));
+        if process_result.success {
+            context.push_str("Status: ✅ Process information available\n");
+            // Extract load average and top processes
+            let mut found_load = false;
+            let mut process_count = 0;
+            for line in process_result.output.lines() {
+                if line.contains("load average") && !found_load {
+                    context.push_str(&format!("Load: {}\n", line.trim()));
+                    found_load = true;
+                } else if line.starts_with("  ") && line.contains("%") && process_count < 3 {
+                    // Top processes (limit to 3 to keep concise)
+                    context.push_str(&format!("Top process: {}\n", line.trim()));
+                    process_count += 1;
+                }
+            }
+        } else {
+            context.push_str("Status: ❌ Failed to check processes\n");
+        }
+        context.push_str("\n");
+        
+        // 5. System Logs (Recent)
+        context.push_str("📜 RECENT SYSTEM LOGS:\n");
+        let log_result = debug_tools.run_journalctl_recent(Some(20)).await;
+        context.push_str(&format!("Command: {}\n", log_result.command));
+        if log_result.success {
+            context.push_str("Status: ✅ System logs available\n");
+            // Count errors/warnings in recent logs
+            let error_count = log_result.output.lines()
+                .filter(|line| line.to_lowercase().contains("error") || line.to_lowercase().contains("failed"))
+                .count();
+            let warning_count = log_result.output.lines()
+                .filter(|line| line.to_lowercase().contains("warning") || line.to_lowercase().contains("warn"))
+                .count();
+            
+            context.push_str(&format!("Recent errors: {} lines\n", error_count));
+            context.push_str(&format!("Recent warnings: {} lines\n", warning_count));
+            
+            if error_count > 0 {
+                context.push_str("Recent error samples:\n");
+                let mut shown_errors = 0;
+                for line in log_result.output.lines() {
+                    if (line.to_lowercase().contains("error") || line.to_lowercase().contains("failed")) 
+                       && shown_errors < 3 {
+                        context.push_str(&format!("  {}\n", line.trim()));
+                        shown_errors += 1;
+                    }
+                }
+            }
+        } else {
+            context.push_str("Status: ❌ Failed to check system logs\n");
+        }
+        context.push_str("\n");
+        
+        // 6. Kubernetes Status (if available)
+        if debug_tools.is_category_available(&tools::ToolCategory::Kubernetes) {
+            context.push_str("☸️ KUBERNETES STATUS:\n");
+            let k8s_cluster_result = debug_tools.run_kubectl_cluster_info().await;
+            context.push_str(&format!("Command: {}\n", k8s_cluster_result.command));
+            if k8s_cluster_result.success {
+                context.push_str("Status: ✅ Kubernetes cluster accessible\n");
+                if k8s_cluster_result.output.contains("Kubernetes control plane") {
+                    context.push_str("Type: Control plane node\n");
+                } else if k8s_cluster_result.output.contains("CoreDNS") {
+                    context.push_str("Type: Cluster member\n");
+                }
+            } else {
+                context.push_str("Status: ❌ Kubernetes cluster not accessible\n");
+            }
+            
+            // Check pod status  
+            let pods_result = debug_tools.run_kubectl_get_pods(None).await;
+            context.push_str(&format!("Command: {}\n", pods_result.command));
+            if pods_result.success {
+                let pod_lines: Vec<&str> = pods_result.output.lines().skip(1).collect(); // Skip header
+                context.push_str(&format!("Pods found: {} across all namespaces\n", pod_lines.len()));
+                
+                let running_pods = pod_lines.iter().filter(|line| line.contains("Running")).count();
+                let failed_pods = pod_lines.iter().filter(|line| 
+                    line.contains("Failed") || line.contains("CrashLoopBackOff") || 
+                    line.contains("Error") || line.contains("ImagePullBackOff")
+                ).count();
+                
+                context.push_str(&format!("Running pods: {}\n", running_pods));
+                context.push_str(&format!("Failed pods: {}\n", failed_pods));
+            } else {
+                context.push_str("Pod status: ❌ Failed to check pods\n");
+            }
+            context.push_str("\n");
+        }
+        
+        // 7. Container Status (if available)
+        if debug_tools.is_category_available(&tools::ToolCategory::ContainerInfo) {
+            context.push_str("🐳 CONTAINER STATUS:\n");
+            let docker_result = debug_tools.run_docker_ps().await;
+            context.push_str(&format!("Command: {}\n", docker_result.command));
+            if docker_result.success {
+                let container_lines: Vec<&str> = docker_result.output.lines().skip(1).collect();
+                context.push_str(&format!("Running containers: {}\n", container_lines.len()));
+            } else {
+                context.push_str("Status: ❌ Docker not accessible or no containers\n");
+            }
+            context.push_str("\n");
+        }
+        
+        context.push_str("============================\n");
+        context.push_str("Initial diagnostics complete. The AI can now use this baseline information\n");
+        context.push_str("to make informed decisions about what additional tools to run.\n\n");
+    }).await;
+    
+    context
+}
+
 /// Unified AI system that always uses AIAgent with full tool access
 async fn run_unified_ai_system(
     config: &RaidConfig,
@@ -163,6 +356,21 @@ async fn run_unified_ai_system(
         collect_basic_system_info()
     });
 
+    // Initialize debug tools for initial diagnostics
+    let debug_tools = DebugTools::initialize_with_availability_check();
+    
+    // Run initial system diagnostics to provide context to the AI
+    let initial_diagnostics = if matches!(
+        (&cli.command, &cli.problem_description), 
+        (Some(Commands::Check { component: CheckComponent::All }), _) | (_, None)
+    ) {
+        // Only run initial diagnostics for full system checks or when no specific problem is described
+        run_initial_system_diagnostics(&debug_tools, ui_formatter).await
+    } else {
+        // For specific questions or component checks, skip initial diagnostics
+        String::new()
+    };
+
     // Create comprehensive system context
     let mut system_context = String::new();
     system_context.push_str(&format!("Operating System: {}\n", sys_info.os));
@@ -182,6 +390,12 @@ async fn run_unified_ai_system(
 
     if sys_info.container_runtime_available {
         system_context.push_str("Container Runtime: Available\n");
+    }
+    
+    // Add initial diagnostics if we ran them
+    if !initial_diagnostics.is_empty() {
+        system_context.push_str("\n");
+        system_context.push_str(&initial_diagnostics);
     }
 
     // Determine the analysis type and create appropriate prompt
